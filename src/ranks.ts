@@ -42,8 +42,8 @@ export const ranks: readonly RankDefinition[] = [
   { key: "maj", displayName: "Major", xpEnabled: false, next: "col", officerTier: 4 },
   { key: "col", displayName: "Colonel", xpEnabled: false, next: "bgen", officerTier: 5 },
   { key: "bgen", displayName: "Brigadier General", xpEnabled: false, next: "acom", officerTier: 6 },
-  { key: "acom", displayName: "Assistant Commander", xpEnabled: false, next: "cmc", officerTier: 7 },
-  { key: "cmc", displayName: "Commander of the Marine Corps", xpEnabled: false, officerTier: 8 },
+  { key: "acom", displayName: "Assistant Commander Of The Marine Corps", xpEnabled: false, next: "cmc", officerTier: 7 },
+  { key: "cmc", displayName: "Commandant Of The Marine Corps", xpEnabled: false, officerTier: 8 },
   { key: "secgen", displayName: "Secretary General", xpEnabled: false, officerTier: 9 },
   { key: "defacto", displayName: "De-Facto Leader", xpEnabled: false, officerTier: 9 },
 ] as const;
