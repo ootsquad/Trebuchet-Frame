@@ -57,7 +57,12 @@ export const CONFIG = Object.freeze({
 
   leaks: Object.freeze({
     thumbnailUrl: env('LEAKS_THUMBNAIL_URL'),
-    color: Number.parseInt(env('LEAKS_COLOR', '1E1F22').replace('#', ''), 16) || 0x1e1f22,
+    // Small logo next to "MATERIALS GROUP" and in the footer.
+    iconUrl: env('LEAKS_ICON_URL') || env('LEAKS_THUMBNAIL_URL'),
+    color: Number.parseInt(env('LEAKS_COLOR', '8FA3AD').replace('#', ''), 16) || 0x8fa3ad,
+    facility: env('LEAKS_FACILITY', 'damascus').toLowerCase(),
+    settingYear: num('LEAKS_SETTING_YEAR', 2524),
+    classification: env('LEAKS_CLASSIFICATION', 'RESTRICTED  ·  ONI SECTION THREE'),
     reactWhenPosted: env('LEAKS_DONE_EMOJI', '✅')
   }),
 

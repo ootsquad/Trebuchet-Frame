@@ -44,11 +44,21 @@ test('promotion only moves up the ladder', () => {
   assert.equal(rankForMerit(ladder, 0).name, 'Private');
 });
 
-test('leak text becomes a headline and a quoted body', () => {
+test('leak text becomes a facility, a headline and a quoted body', () => {
   const card = formatLeak('"You\'re exactly the kind of men I need."\nThe 501st Legion was elite.\nLed by Rex.');
+  assert.equal(card.facility, 'damascus');
   assert.equal(card.title, '"You\'re exactly the kind of men I need."');
   assert.equal(card.description, '> The 501st Legion was elite.\n> Led by Rex.');
   assert.equal(formatLeak('Only a title').description, null);
+  const tagged = formatLeak('[Ganymede]\nZero-g trials\nThrusters hold.');
+  assert.equal(tagged.facility, 'ganymede');
+  assert.equal(tagged.title, 'Zero-g trials');
+  assert.equal(formatLeak('from: nowhere\nTitle').title, 'from: nowhere');
+});
+
+test('setting date uses the real day in the setting year', async () => {
+  const { settingDate } = await import('../src/leaks.js');
+  assert.equal(settingDate(new Date('2026-11-17T15:00:00Z'), 2524, 'America/New_York'), '17 NOV 2524');
 });
 
 test('profile phrase check ignores case, spacing and punctuation', async () => {
