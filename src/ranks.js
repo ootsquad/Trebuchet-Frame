@@ -6,7 +6,7 @@
 export const LADDERS = Object.freeze({
   odst: [],
   aar: [],
-  mru: [],
+  mfr: [],
   mcsb: [],
   mid: []
 });

@@ -17,7 +17,7 @@ const eventChoices = Object.entries(EVENT_TYPES).map(([value, event]) => ({ name
 
 function groupChoices() {
   const choices = [{ name: 'UNSC', value: CONFIG.groups.unsc }, { name: 'Marine Corps', value: CONFIG.groups.marines }];
-  const names = { odst: '105th ODST', aar: '75th AAR', mru: '3rd MRU', mcsb: '7th MCSB', mid: '1st MID' };
+  const names = { odst: '105th ODST', aar: '75th AAR', mfr: '3rd MFR', mcsb: '7th MCSB', mid: '1st MID' };
   for (const [key, id] of Object.entries(CONFIG.groups.divisions)) if (id) choices.push({ name: names[key], value: id });
   return choices;
 }

@@ -17,7 +17,7 @@ Every `SYNC_EVERY_MINUTES` the bot reads the division groups, the Marine Corps g
 
 | Situation | Change |
 | --- | --- |
-| In a division group | Marine Corps rank becomes that division (105th ODST, 75th AAR, 3rd MRU, 7th MCSB, 1st MID) |
+| In a division group | Marine Corps rank becomes that division (105th ODST, 75th AAR, 3rd MFR, 7th MCSB, 1st MID) |
 | In two divisions | The first in that list wins |
 | Left every division | Marine Corps rank becomes Unassigned Marine Personnel |
 | Marine Corps command rank | UNSC rank becomes Marine Corps Command |

@@ -81,7 +81,7 @@ export const CONFIG = Object.freeze({
     divisions: Object.freeze({
       odst: env('GROUP_105TH_ODST_ID'),
       aar: env('GROUP_75TH_AAR_ID'),
-      mru: env('GROUP_3RD_MRU_ID'),
+      mfr: env('GROUP_3RD_MFR_ID') || env('GROUP_3RD_MRU_ID'),
       mcsb: env('GROUP_7TH_MCSB_ID'),
       mid: env('GROUP_1ST_MID_ID')
     }),

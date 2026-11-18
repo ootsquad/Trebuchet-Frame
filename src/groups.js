@@ -22,7 +22,7 @@ export const MARINES = Object.freeze({
 export const DIVISIONS = Object.freeze([
   { key: 'odst', rank: '105th Orbital Drop Shock Troopers', groupId: CONFIG.groups.divisions.odst },
   { key: 'aar', rank: '75th Armored Assault Regiment', groupId: CONFIG.groups.divisions.aar },
-  { key: 'mru', rank: '3rd Marine Reconnaissance Unit', groupId: CONFIG.groups.divisions.mru },
+  { key: 'mfr', rank: '3rd Marine Force Reconnaissance', groupId: CONFIG.groups.divisions.mfr },
   { key: 'mcsb', rank: '7th Marine Combat Support Battalion', groupId: CONFIG.groups.divisions.mcsb },
   { key: 'mid', rank: '1st Marine Infantry Division', groupId: CONFIG.groups.divisions.mid }
 ].filter((division) => division.groupId));
