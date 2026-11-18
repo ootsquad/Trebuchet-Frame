@@ -1,27 +1,19 @@
 {
-  "name": "trebuchet-progression-bot",
+  "name": "trebuchet-frame-bot",
   "version": "1.0.0",
   "private": true,
+  "description": "Discord bot: wave applications, suggestions, leaks, announcements, and event merit and cR tied to the game save.",
   "type": "module",
-  "engines": {
-    "node": ">=22"
-  },
+  "main": "src/index.js",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "dev": "tsx watch src/index.ts",
-    "start": "node dist/src/index.js",
-    "test": "vitest run"
+    "start": "node src/index.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
-    "discord.js": "^14.22.1",
-    "express": "^5.1.0",
-    "zod": "^4.1.5"
-  },
-  "devDependencies": {
-    "@types/express": "^5.0.3",
-    "@types/node": "^22.18.1",
-    "tsx": "^4.20.5",
-    "typescript": "^5.9.2",
-    "vitest": "^3.2.4"
+    "discord.js": "^14.27.0",
+    "dotenv": "^16.6.1"
   }
 }
