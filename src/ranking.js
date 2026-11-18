@@ -72,6 +72,11 @@ export function createRanking({ client, store, roblox, access }) {
   async function checkTarget(group, role, actor, target) {
     if (target.id === actor.id && role.name !== 'Full Access') throw new Error('You cannot change your own rank.');
     const current = (await roblox.getRoles(group.groupId, target.id))[0];
+    // Project: Trebuchet uses Roblox's newer roles, where order is not by rank number: only Full Access works there.
+    if (group.kind === 'project') {
+      if (!current) throw new Error(`${target.name} is not in ${group.short}. Check their join request first.`);
+      return current;
+    }
     if (!current) throw new Error(`${target.name} is not in ${group.short}. Check their join request first.`);
     if (current.rank >= role.rank) throw new Error(`${target.name} is ${current.name}, which is not below your rank. You cannot change them.`);
     return current;
@@ -84,6 +89,21 @@ export function createRanking({ client, store, roblox, access }) {
     const allowed = await access.assignableRanks(group, role);
     const rank = allowed.find((entry) => same(entry.name, rankName));
     if (!rank) throw new Error(`"${rankName}" is not a rank you can give in ${group.short}.`);
+
+    // Project: Trebuchet: members can hold several roles, so picking a role gives it, or takes it away if they have it.
+    if (group.kind === 'project') {
+      const held = (await roblox.getRoles(group.groupId, target.id)).map((entry) => entry.name);
+      const has = held.some((name) => same(name, rank.name));
+      if (has) await roblox.removeRole(group.groupId, target.id, rank.name);
+      else await roblox.addRole(group.groupId, target.id, rank.name);
+      access.forget(group, target.id);
+      const after = (await roblox.getRoles(group.groupId, target.id)).map((entry) => entry.name);
+      await logChange({
+        group, target, from: held.join(', ') || 'None', to: after.join(', ') || 'None', by: `<@${discordUserId}> (${actor.name}, ${role.name})`,
+        reason: `${has ? 'Took away' : 'Gave'} ${rank.name}${reason ? `\n${reason}` : ''}`, color: has ? COLORS.warn : COLORS.info
+      });
+      return { group, before: held.join(', ') || 'None', after: after.join(', ') || 'None', needsCommand: false };
+    }
 
     // Above the earnable rank, the division's Commanding and Executive Officers are told.
     const needsCommand = Boolean(group.earnable) && rank.rank > group.earnable;
@@ -178,7 +198,7 @@ export function createRanking({ client, store, roblox, access }) {
   // Project: Trebuchet requests are for wave moderators; every other group for its managers.
   async function canHandleRequests(interaction, groupKey) {
     if (groupKey === 'project') {
-      const allowed = interaction.member?.permissions?.has('ManageGuild') || (CONFIG.roles.waveModerator && interaction.member?.roles?.cache?.has(CONFIG.roles.waveModerator));
+      const allowed = access.isSuper(interaction.user.id) || interaction.member?.permissions?.has('ManageGuild') || (CONFIG.roles.waveModerator && interaction.member?.roles?.cache?.has(CONFIG.roles.waveModerator));
       if (!allowed) throw new Error('Only Wave Moderators handle Project: Trebuchet join requests.');
       return { actor: access.actorOf(interaction.user.id), group: groupByKey('project'), role: { name: 'Wave Moderator' } };
     }

@@ -104,7 +104,7 @@ export function createRankPanel({ client, store, roblox, access, ranking }) {
       if (interaction.isButton() && id === 'panel:pending') {
         const groups = await access.managedGroups(interaction.user.id).catch(() => []);
         const waveMod = interaction.member?.permissions?.has('ManageGuild') || (CONFIG.roles.waveModerator && interaction.member?.roles?.cache?.has(CONFIG.roles.waveModerator));
-        if (waveMod && groupByKey('project')) groups.unshift({ group: groupByKey('project'), role: { name: 'Wave Moderator' } });
+        if (waveMod && groupByKey('project') && !groups.some(({ group }) => group.key === 'project')) groups.unshift({ group: groupByKey('project'), role: { name: 'Wave Moderator' } });
         if (!groups.length) throw new Error('You do not manage any group\'s join requests.');
         await interaction.reply({ embeds: [note('Which group\'s join requests?')], components: [groupMenu('panel:requests', groups, 'Pick a group')], flags: MessageFlags.Ephemeral });
         return true;
@@ -146,7 +146,9 @@ export function createRankPanel({ client, store, roblox, access, ranking }) {
         const current = await ranking.checkTarget(group, role, actor, target);
         const reason = interaction.fields.getTextInputValue('reason')?.trim();
         reasons.set(`${interaction.user.id}:${groupKey}:${target.id}`, reason || null);
-        const ranks = (await access.assignableRanks(group, role)).filter((rank) => rank.name.toLowerCase() !== current.name.toLowerCase());
+        const project = group.kind === 'project';
+        const held = project ? (await roblox.getRoles(group.groupId, target.id)).map((entry) => entry.name.toLowerCase()) : [];
+        const ranks = (await access.assignableRanks(group, role)).filter((rank) => project || rank.name.toLowerCase() !== current.name.toLowerCase());
         if (!ranks.length) throw new Error('There is no other rank you can give them.');
         const headshot = await roblox.headshotUrl(target.id).catch(() => null);
         const embed = new EmbedBuilder()
@@ -154,18 +156,21 @@ export function createRankPanel({ client, store, roblox, access, ranking }) {
           .setAuthor({ name: `${group.short} · Change a rank` })
           .setTitle(target.name)
           .setURL(`https://www.roblox.com/users/${target.id}/profile`)
-          .addFields({ name: 'Current rank', value: current.name, inline: true }, { name: 'Reason', value: reason || 'None given', inline: true })
+          .addFields({ name: project ? 'Current roles' : 'Current rank', value: project ? held.map((name) => ranks.find((rank) => rank.name.toLowerCase() === name)?.name || name).join(', ') || current.name : current.name, inline: true }, { name: 'Reason', value: reason || 'None given', inline: true })
           .setFooter({ text: group.earnable ? `Ranks above rank ${group.earnable} notify the Commanding and Executive Officers.` : 'Pick the new rank below.' });
         if (headshot) embed.setThumbnail(headshot);
         const menu = new StringSelectMenuBuilder()
           .setCustomId(`panel:pick:${groupKey}:${target.id}`)
-          .setPlaceholder('Pick the new rank')
-          .addOptions(ranks.slice(0, 25).map((rank) => ({
-            label: rank.name.slice(0, 100),
-            value: rank.name.slice(0, 100),
-            description: rank.rank > current.rank ? 'Promotion' : 'Demotion',
-            emoji: rank.rank > current.rank ? '⬆️' : '⬇️'
-          })));
+          .setPlaceholder(project ? 'Pick a role to give or take away' : 'Pick the new rank')
+          .addOptions(ranks.slice(0, 25).map((rank) => {
+            const has = held.includes(rank.name.toLowerCase());
+            return {
+              label: rank.name.slice(0, 100),
+              value: rank.name.slice(0, 100),
+              description: project ? (has ? 'Has it: take it away' : 'Give this role') : rank.rank > current.rank ? 'Promotion' : 'Demotion',
+              emoji: project ? (has ? '➖' : '➕') : rank.rank > current.rank ? '⬆️' : '⬇️'
+            };
+          }));
         await interaction.editReply({ embeds: [embed], components: [new ActionRowBuilder().addComponents(menu)] });
         return true;
       }

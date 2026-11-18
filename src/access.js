@@ -31,7 +31,7 @@ export function createAccess({ roblox, store }) {
   async function managedGroups(discordUserId) {
     const actor = actorOf(discordUserId);
     if (!actor) return [];
-    if (isSuper(discordUserId)) return GROUPS.filter((group) => group.kind !== 'project').map((group) => ({ group, role: SUPER_ROLE }));
+    if (isSuper(discordUserId)) return GROUPS.map((group) => ({ group, role: SUPER_ROLE }));
     const result = [];
     for (const group of GROUPS) {
       if (group.kind === 'project') continue;
@@ -48,7 +48,7 @@ export function createAccess({ roblox, store }) {
     if (!actor) throw new Error('Link and verify your Roblox account with /link first. Ranking permissions come from your Roblox ranks.');
     const group = groupByKey(groupKey);
     if (!group) throw new Error('Unknown group.');
-    if (isSuper(discordUserId) && group.kind !== 'project') return { actor, group, role: SUPER_ROLE };
+    if (isSuper(discordUserId)) return { actor, group, role: SUPER_ROLE };
     const roles = await rolesIn(group, actor.id);
     const role = roles.find((entry) => isManagerRank(group, entry.name));
     if (!role) throw new Error(`You do not hold a rank in ${group.short} that can manage it.`);

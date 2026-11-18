@@ -84,7 +84,7 @@ test('super admins manage every group, including the Marine Corps', async () => 
   store.link('dx', { id: '497730291', name: 'xaiver' });
   const keys = (await access.managedGroups('dx')).map((m) => m.group.key);
   assert.ok(keys.includes('marines') && keys.includes('unsc') && keys.includes('odst') && keys.includes('vehicles'));
-  assert.ok(!keys.includes('project'));
+  assert.ok(keys.includes('project'));
   const { role } = await access.requireManager('dx', 'odst');
   assert.equal(role.rank, 200);
 });
