@@ -59,7 +59,7 @@ export const CONFIG = Object.freeze({
   }),
 
   roblox: Object.freeze({
-    apiKey: env('ROBLOX_API_KEY'),
+    apiKey: env('ROBLOX_API_KEY') || env('ROBLOX_OPEN_CLOUD_API_KEY'),
     universeId: env('ROBLOX_UNIVERSE_ID'),
     economyStore: env('ROBLOX_ECONOMY_STORE', 'TrebuchetEconomyV1')
   }),
@@ -117,8 +117,9 @@ export function featureProblems() {
   need('Suggestions', ['CHANNEL_SUGGESTIONS', 'CHANNEL_IMPORTANT_SUGGESTIONS']);
   need('Leaks', ['CHANNEL_LEAKS_SOURCE', 'CHANNEL_LEAKS']);
   need('Announcements', ['CHANNEL_ANNOUNCEMENTS']);
-  need('Wave applications', ['CHANNEL_WAVE_APPLICATIONS', 'ROLE_WAVE_MODERATOR', 'ROLE_UNWAVED', 'ROLE_COMMUNITY_MEMBER', 'ROBLOX_API_KEY']);
-  need('Rank sync', ['ROBLOX_API_KEY', 'CHANNEL_RANK_LOGS']);
-  need('Events, merit and cR', ['CHANNEL_EVENT_LOGS', 'ROLE_EVENT_HOST', 'ROBLOX_API_KEY', 'ROBLOX_UNIVERSE_ID']);
+  need('Wave applications', ['CHANNEL_WAVE_APPLICATIONS', 'ROLE_WAVE_MODERATOR', 'ROLE_UNWAVED', 'ROLE_COMMUNITY_MEMBER']);
+  need('Rank sync', ['CHANNEL_RANK_LOGS']);
+  need('Events, merit and cR', ['CHANNEL_EVENT_LOGS', 'ROLE_EVENT_HOST', 'ROBLOX_UNIVERSE_ID']);
+  if (!env('ROBLOX_API_KEY') && !env('ROBLOX_OPEN_CLOUD_API_KEY')) problems.push('Roblox features are off until ROBLOX_API_KEY is set.');
   return problems;
 }
