@@ -9,7 +9,7 @@ import { createLeaks } from './leaks.js';
 import { createAnnouncements } from './announcements.js';
 import { createEvents } from './events.js';
 import { createSync } from './sync.js';
-import { handleCommand, registerCommands } from './commands.js';
+import { handleCommand, handleLinkButton, registerCommands } from './commands.js';
 
 validateConfig();
 for (const problem of featureProblems()) console.warn(`[Setup] ${problem}`);
@@ -71,6 +71,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   try {
     if (await applications.handleButton(interaction)) return;
     if (await events.button(interaction)) return;
+    if (await handleLinkButton(interaction, { store })) return;
     if (await announcements.submit(interaction)) return;
     await handleCommand(interaction, { applications, suggestions, announcements, events, sync, roblox, store });
   } catch (error) {

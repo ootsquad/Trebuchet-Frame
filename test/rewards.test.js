@@ -50,3 +50,12 @@ test('leak text becomes a headline and a quoted body', () => {
   assert.equal(card.description, '> The 501st Legion was elite.\n> Led by Rex.');
   assert.equal(formatLeak('Only a title').description, null);
 });
+
+test('profile phrase check ignores case, spacing and punctuation', async () => {
+  const { makePhrase, profileHasPhrase } = await import('../src/verify.js');
+  const phrase = makePhrase();
+  assert.match(phrase, /^UNSC( [a-z]+){5}$/);
+  assert.equal(profileHasPhrase(`Hi! ${phrase.toUpperCase().replace(/ /g, '  ')}. Semper fi`, phrase), true);
+  assert.equal(profileHasPhrase('UNSC alpha bravo', 'UNSC alpha bravo charlie delta echo'), false);
+  assert.equal(profileHasPhrase('xUNSC alpha bravo charlie delta echo', 'UNSC alpha bravo charlie delta echo'), false);
+});

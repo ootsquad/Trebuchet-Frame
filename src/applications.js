@@ -6,6 +6,7 @@ import {
   MessageFlags
 } from 'discord.js';
 import { CONFIG } from './config.js';
+import { checkPhrase, makePhrase } from './verify.js';
 
 async function getTextChannel(client, channelId) {
   const channel = await client.channels.fetch(channelId);
@@ -99,6 +100,7 @@ function buildApplicationEmbeds({ member, robloxUser, age, knowledge, agreements
     .setColor(0xFEE75C)
     .addFields(
       { name: 'Roblox Username / UserID', value: `${trim(robloxUser.name, 200)} / ${robloxUser.id}` },
+      { name: 'Account ownership', value: '✅ Verified with a phrase in their Roblox profile' },
       { name: 'Discord Username / Discord UserID', value: `${trim(member.user.tag, 200)} / ${member.id}` },
       { name: 'User Age', value: trim(age, 100), inline: true },
       { name: 'Current Roblox Group Role(s)', value: trim(roleText, 500), inline: true }
@@ -193,6 +195,30 @@ export function createApplicationService({ client, roblox, store }) {
       });
       const robloxUser = robloxAnswer.result;
 
+      // Prove the account is theirs: a phrase in their Roblox profile's About section.
+      const owner = store.discordFor(robloxUser.id);
+      if (owner && owner !== member.id) {
+        throw new Error(`The Roblox account ${robloxUser.name} is already linked to another Discord account. Contact a Wave Moderator.`);
+      }
+      const phrase = makePhrase();
+      await dm.send([
+        `To prove **${robloxUser.name}** is your account, put this phrase in your Roblox profile's About section:`,
+        `\`${phrase}\``,
+        `Edit it here: https://www.roblox.com/users/${robloxUser.id}/profile`,
+        'Then reply `done`. You can remove it once you are verified.'
+      ].join('\n'));
+      let verified = false;
+      for (let tries = 1; tries <= 3 && !verified; tries += 1) {
+        await ask(dm, member.id, tries === 1 ? 'Reply `done` when the phrase is saved on your profile.' : 'Reply `done` to check again.', { timeout: 30 * 60_000 });
+        await dm.send('Checking your profile...');
+        verified = await checkPhrase(robloxUser.id, phrase);
+        if (!verified && tries < 3) {
+          await dm.send(`I could not find \`${phrase}\` on ${robloxUser.name}'s profile. Make sure it is saved in About exactly as written, with nothing hidden by Roblox's filter.`);
+        }
+      }
+      if (!verified) throw new Error(`The phrase never showed up on ${robloxUser.name}'s profile, so the account could not be verified.`);
+      await dm.send(`Verified: ${robloxUser.name} is yours. You can remove the phrase from your profile now.`);
+
       const ageAnswer = await ask(dm, member.id, 'User Information 2/2: What is your age?', {
         validate: async (answer) => {
           const age = Number(answer);
@@ -284,6 +310,10 @@ export function createApplicationService({ client, roblox, store }) {
         const robloxResult = await roblox.waveMember(parsed.robloxUserId);
         const guildMember = await message.guild.members.fetch(parsed.discordUserId);
         const linked = await roblox.resolveUser(parsed.robloxUserId).catch(() => ({ id: parsed.robloxUserId, name: parsed.robloxUserId }));
+        const owner = store.discordFor(parsed.robloxUserId);
+        if (owner && owner !== parsed.discordUserId) {
+          throw new Error(`That Roblox account is already linked to <@${owner}>. Sort that out before approving.`);
+        }
         store.link(parsed.discordUserId, linked);
         await guildMember.roles.add(CONFIG.roles.communityMember, `Wave application approved by ${moderator.user.tag}`);
         if (guildMember.roles.cache.has(CONFIG.roles.unWaved)) {

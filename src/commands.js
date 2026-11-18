@@ -1,4 +1,8 @@
-import { MessageFlags, PermissionFlagsBits, SlashCommandBuilder } from 'discord.js';
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, PermissionFlagsBits, SlashCommandBuilder } from 'discord.js';
+import { checkPhrase, makePhrase } from './verify.js';
+
+// Self-linking waits for the phrase check: Discord user id -> { account, phrase, expires }.
+const pendingLinks = new Map();
 import { CONFIG } from './config.js';
 import { EVENT_TYPES } from './rewards.js';
 import { UNSC } from './groups.js';
@@ -85,6 +89,31 @@ export async function registerCommands(client) {
 const isStaff = (member) => member?.permissions?.has(PermissionFlagsBits.ManageGuild) ||
   Boolean(CONFIG.roles.waveModerator && member?.roles?.cache?.has(CONFIG.roles.waveModerator));
 
+// The Verify button from /link.
+export async function handleLinkButton(interaction, { store }) {
+  if (!interaction.isButton() || interaction.customId !== 'link:verify') return false;
+  const pending = pendingLinks.get(interaction.user.id);
+  if (!pending || pending.expires < Date.now()) {
+    pendingLinks.delete(interaction.user.id);
+    await interaction.update({ content: 'This check ran out. Run /link again.', components: [] });
+    return true;
+  }
+  await interaction.update({ content: `Checking ${pending.account.name}'s profile...`, components: [] });
+  if (!(await checkPhrase(pending.account.id, pending.phrase))) {
+    await interaction.editReply({
+      content: `I could not find \`${pending.phrase}\` on ${pending.account.name}'s profile. Save it in About exactly as written, then press Verify again.`,
+      components: [new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('link:verify').setLabel('Verify').setStyle(ButtonStyle.Success)
+      )]
+    });
+    return true;
+  }
+  pendingLinks.delete(interaction.user.id);
+  store.link(interaction.user.id, pending.account);
+  await interaction.editReply({ content: `Verified and linked to ${pending.account.name}. You can remove the phrase from your profile now.`, components: [] });
+  return true;
+}
+
 export async function handleCommand(interaction, { applications, suggestions, announcements, events, sync, roblox, store }) {
   if (!interaction.isChatInputCommand()) return false;
   const name = interaction.commandName;
@@ -114,8 +143,30 @@ export async function handleCommand(interaction, { applications, suggestions, an
     }
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const account = await roblox.resolveUser(interaction.options.getString('roblox_user', true));
-    store.link(target.id, account);
-    await interaction.editReply(`Linked <@${target.id}> to ${account.name} (${account.id}).`);
+    const owner = store.discordFor(account.id);
+    if (owner && owner !== target.id && !isStaff(interaction.member)) {
+      await interaction.editReply(`${account.name} is already linked to another Discord account. Ask staff if that is wrong.`);
+      return true;
+    }
+    // Staff linking someone else: no check, they vouch for it.
+    if (other && other.id !== interaction.user.id) {
+      store.link(target.id, account);
+      await interaction.editReply(`Linked <@${target.id}> to ${account.name} (${account.id}).`);
+      return true;
+    }
+    const phrase = makePhrase();
+    pendingLinks.set(interaction.user.id, { account, phrase, expires: Date.now() + 30 * 60_000 });
+    await interaction.editReply({
+      content: [
+        `To prove **${account.name}** is yours, put this phrase in your Roblox profile's About section:`,
+        `\`${phrase}\``,
+        `Edit it here: https://www.roblox.com/users/${account.id}/profile`,
+        'Then press Verify within 30 minutes. You can remove the phrase afterwards.'
+      ].join('\n'),
+      components: [new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('link:verify').setLabel('Verify').setStyle(ButtonStyle.Success)
+      )]
+    });
     return true;
   }
 

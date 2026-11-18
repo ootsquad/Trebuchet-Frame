@@ -35,6 +35,12 @@ export class JsonStore {
     this.save();
   }
 
+  // The Discord account a Roblox account is linked to, if any.
+  discordFor(robloxId) {
+    const found = Object.entries(this.data.links).find(([, link]) => String(link.id) === String(robloxId));
+    return found ? found[0] : null;
+  }
+
   linkedRoblox(discordId) {
     return this.data.links[String(discordId)] || null;
   }

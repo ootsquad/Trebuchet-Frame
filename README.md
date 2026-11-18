@@ -3,6 +3,7 @@
 Discord bot for the UNSC community. It handles:
 
 - Rank sync across the Roblox groups.
+- Roblox account proof: wave applications and `/link` give a phrase of plain words to put in the Roblox profile's About section, and the bot checks the profile before it links anything. One Roblox account can only be linked to one Discord account.
 - Wave applications: a DM questionnaire, then Approve or Deny buttons for Wave Moderators. Approving moves the account from Undocumented Refugee to Registered Civilian in the UNSC group, gives the Discord role, and links the accounts.
 - Suggestions: posts in the suggestions channel (or `/suggest`) become vote cards with ✅ and ❌ and a thread. At 25 upvotes (not counting the author or bots) the card is copied to the important suggestions channel, once.
 - Leaks: a post with a picture in the leaks source channel is reposted to the leaks channel as a card. The first line is the headline, the rest is the quoted body, the picture is the big image, and `LEAKS_THUMBNAIL_URL` is the small picture in the corner.
