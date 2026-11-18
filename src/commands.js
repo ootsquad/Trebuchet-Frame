@@ -143,12 +143,16 @@ export async function handleCommand(interaction, { applications, suggestions, an
       return true;
     }
     if (!other && store.linkedRoblox(target.id) && !isStaff(interaction.member)) {
-      await interaction.reply({ content: `You are already linked to ${store.linkedRoblox(target.id).name}. Ask staff to change it.`, flags: MessageFlags.Ephemeral });
+      await interaction.reply({ embeds: [note(`✅ You are already linked to **${store.linkedRoblox(target.id).name}**. Ask staff if you need to change it.`, COLORS.good)], flags: MessageFlags.Ephemeral });
       return true;
     }
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const account = await roblox.resolveUser(interaction.options.getString('roblox_user', true));
     const owner = store.discordFor(account.id);
+    if (owner === target.id) {
+      await interaction.editReply({ embeds: [note(`✅ ${other ? `<@${target.id}> is` : 'You are'} already linked to **${account.name}**. No need to verify again.`, COLORS.good)] });
+      return true;
+    }
     if (owner && owner !== target.id && !isStaff(interaction.member)) {
       await interaction.editReply(`${account.name} is already linked to another Discord account. Ask staff if that is wrong.`);
       return true;

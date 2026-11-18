@@ -238,34 +238,56 @@ export function createApplicationService({ client, roblox, store }) {
         footer: 'A Wave Moderator reviews every application.'
       })] });
 
-      const robloxAnswer = await ask(dm, member.id, { embeds: [card({
-        section: SECTION,
-        title: `${step(1)}  Roblox account`,
-        description: 'What is your **Roblox username** or **user ID**?',
-        footer: 'Use your username, not your display name.'
-      })] }, {
-        validate: (answer) => roblox.resolveUser(answer)
-      });
-      const robloxUser = robloxAnswer.result;
+      // Someone whose Discord is already linked (and so verified) can reuse that account and skip the check.
+      const existing = store.linkedRoblox(member.id);
+      let robloxUser = null;
+      if (existing) {
+        const pick = await choose(dm, member.id, { embeds: [card({
+          section: SECTION,
+          title: `${step(1)}  Roblox account`,
+          description: `Your Discord is already linked to **${existing.name}**, and that account is verified. Apply with it?`
+        })] }, [
+          { id: 'wavedm:same', label: `Use ${existing.name}`.slice(0, 80), style: ButtonStyle.Success },
+          { id: 'wavedm:other', label: 'Use a different account', style: ButtonStyle.Secondary }
+        ]);
+        if (pick === 'wavedm:same') robloxUser = await roblox.resolveUser(existing.id);
+      }
+      if (!robloxUser) {
+        const robloxAnswer = await ask(dm, member.id, { embeds: [card({
+          section: SECTION,
+          title: `${step(1)}  Roblox account`,
+          description: 'What is your **Roblox username** or **user ID**?',
+          footer: 'Use your username, not your display name.'
+        })] }, {
+          validate: (answer) => roblox.resolveUser(answer)
+        });
+        robloxUser = robloxAnswer.result;
+      }
 
-      // Prove the account is theirs: a phrase in their Roblox profile's About section.
       const owner = store.discordFor(robloxUser.id);
       if (owner && owner !== member.id) {
         throw new Error(`The Roblox account ${robloxUser.name} is already linked to another Discord account. Contact a Wave Moderator.`);
       }
-      const phrase = makePhrase();
-      let verified = false;
-      for (let tries = 1; tries <= 5 && !verified; tries += 1) {
-        await choose(dm, member.id, { embeds: [tries === 1
-          ? verifyCard(robloxUser, phrase, { section: SECTION, step: step(2) })
-          : note(`I could not find the phrase on **${robloxUser.name}**'s profile yet. Check it is saved in **About** exactly as written, wait a few seconds, and try again. (${tries - 1} of 4 tries used)`, COLORS.warn)] }, [
-          { label: 'Open my profile', url: profileUrl(robloxUser.id) },
-          { id: 'wavedm:check', label: 'Check my profile', style: ButtonStyle.Success }
-        ], { timeout: 30 * 60_000 });
-        verified = await checkPhrase(robloxUser.id, phrase);
+      if (owner === member.id) {
+        await dm.send({ embeds: [note(`✅ **${robloxUser.name}** is already verified as yours, so ${step(2).toLowerCase()} is skipped.`, COLORS.good)] });
+      } else {
+        // Prove the account is theirs: a phrase in their Roblox profile's About section.
+        const phrase = makePhrase();
+        let verified = false;
+        for (let tries = 1; tries <= 5 && !verified; tries += 1) {
+          await choose(dm, member.id, { embeds: [tries === 1
+            ? verifyCard(robloxUser, phrase, { section: SECTION, step: step(2) })
+            : note(`I could not find the phrase on **${robloxUser.name}**'s profile yet. Check it is saved in **About** exactly as written, wait a few seconds, and try again. (${tries - 1} of 4 tries used)`, COLORS.warn)] }, [
+            { label: 'Open my profile', url: profileUrl(robloxUser.id) },
+            { id: 'wavedm:check', label: 'Check my profile', style: ButtonStyle.Success }
+          ], { timeout: 30 * 60_000 });
+          verified = await checkPhrase(robloxUser.id, phrase);
+        }
+        if (!verified) throw new Error(`The phrase never showed up on ${robloxUser.name}'s profile, so the account could not be verified.`);
+        // Saved now, so a later application or /link does not ask again.
+        store.link(member.id, robloxUser);
+        await dm.send({ embeds: [note(`✅ **${robloxUser.name}** is verified. You can delete the phrase from your profile now.`, COLORS.good)] });
       }
-      if (!verified) throw new Error(`The phrase never showed up on ${robloxUser.name}'s profile, so the account could not be verified.`);
-      await dm.send({ embeds: [note(`✅ **${robloxUser.name}** is verified. You can delete the phrase from your profile now.`, COLORS.good)] });
 
       const ageAnswer = await ask(dm, member.id, { embeds: [card({
         section: SECTION,
