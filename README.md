@@ -4,29 +4,45 @@ Discord bot for the UNSC community. It handles:
 
 - Rank sync across the Roblox groups.
 - Roblox account proof: wave applications and `/link` give a phrase of plain words to put in the Roblox profile's About section, and the bot checks the profile before it links anything. One Roblox account can only be linked to one Discord account.
-- Wave applications: a DM questionnaire, then Approve or Deny buttons for Wave Moderators. Approving moves the account from Undocumented Refugee to Registered Civilian in the UNSC group, gives the Discord role, and links the accounts.
+- Wave applications: a DM questionnaire, then Approve or Deny buttons for Wave Moderators. Approving accepts their join request to Project: Trebuchet if they have one, gives the Waved role there, gives the Discord role, and links the accounts. `/unwave` takes it away.
 - Suggestions: posts in the suggestions channel (or `/suggest`) become vote cards with ✅ and ❌ and a thread. At 25 upvotes (not counting the author or bots) the card is copied to the important suggestions channel, once.
 - Leaks: a post with a picture in the leaks source channel is reposted to the leaks channel as a card. The first line is the headline, the rest is the quoted body, the picture is the big image, and `LEAKS_THUMBNAIL_URL` is the small picture in the corner.
 - Announcements: `/announce` opens a form, with an optional @here, @everyone or role ping. `edit_message_id` edits an earlier one.
 - Events, merit and cR: `/event` previews pay for every attendee, the host confirms, and the bot sends merit and cR into each player's game save. Then it promotes by merit inside the division groups.
-- `/profile`, `/link`, `/grant` (staff), `/rank` (staff), `/sync`.
+- `/rank`, `/license`, `/pending`, `/ladder`, `/profile`, `/link`, `/grant` (staff), `/sync`.
+
+## Groups and who manages them
+
+| Group | Managed through the bot by |
+| --- | --- |
+| Project: Trebuchet | Wave Moderators, and only the Waved role |
+| UNSC | De Facto Leader, Secretary-General, UNSC Security Council, Naval Command, Unified Ground Command, Marine Corps Command |
+| Marine Corps | Commandant, Assistant Commandant, Marine Aviation Command, Military Command |
+| ODST, 1st MID, 3rd MFR, 75th AAR, 7th MCSB, Navy, Materials Group | That group's Commanding Officer and Executive Officer ranks |
+| Vehicle & Flight Certification | Certification Officer, Director of Operational Standards and above |
+
+Permissions come only from Roblox ranks on the person's verified account, never from Discord roles. In `/rank`, `/license`, `/pending` and `/ladder` a person only sees the groups they manage, and only that group's ranks below their own. They cannot change anyone at or above their own rank. Every change goes to the rank log with who made it and in which group.
 
 ## Rank sync
 
-Every `SYNC_EVERY_MINUTES` the bot reads the division groups, the Marine Corps group (4615235) and the UNSC group (4615211):
+Every `SYNC_EVERY_MINUTES` the bot reads the groups and fixes ranks:
 
-| Situation | Change |
+| Membership | Result |
 | --- | --- |
-| In a division group | Marine Corps rank becomes that division (105th ODST, 75th AAR, 3rd MFR, 7th MCSB, 1st MID) |
-| In two divisions | The first in that list wins |
+| A division group | Marine Corps rank becomes that division |
 | Left every division | Marine Corps rank becomes Unassigned Marine Personnel |
-| Marine Corps command rank | UNSC rank becomes Marine Corps Command |
-| Any other Marine Corps rank | UNSC rank becomes Enlisted Marine Personnel |
-| Left the Marine Corps | UNSC rank becomes `UNSC_LEFT_MARINES_RANK` |
+| ODST | UNSC: Special Operations Personnel |
+| Marine Corps or another division | UNSC: Enlisted Marine Personnel |
+| A division Executive Officer, Company Commander or Operations Officer | UNSC: Commissioned Military Personnel |
+| A division Commanding Officer, or Marine Corps command ranks | UNSC: Marine Corps Command |
+| Navy group | UNSC: Enlisted Naval Personnel |
+| Materials Group | UNSC: Materials Group Personnel |
 
-It never changes Artificial Intelligence, Commandant, Assistant Commandant, Marine Aviation Command or Military Command in the Marine Corps. In the UNSC group it only changes Marine Corps Command, Enlisted Marine Personnel, UNSC Candidate, Person of Interest, Registered Civilian and Undocumented Refugee. Everyone else is left alone. The rules are in `src/groups.js`.
+When several apply, the highest in this order wins: Marine Corps Command, Commissioned Military Personnel, Special Operations Personnel, Materials Group Personnel, Enlisted Naval Personnel, Enlisted Marine Personnel. Leadership, ONI, Naval Command and Unified Ground Command are never touched. `SYNC_DRY_RUN=true` only previews.
 
-`SYNC_DRY_RUN=true` (the default) only posts what it would change to the rank log. Turn it off once the previews look right.
+## Merit ladders
+
+A group's commanders set its ladder with `/ladder`, lowest rank first. Every `MERIT_PER_RANK` (200) merit earned since the last promotion moves someone one step. The approval rank (by default the last one, the top NCO rank) is never automatic: the group's commanders get a request with Approve and Deny buttons. Giving that rank or higher by hand with `/rank` notifies the Commanding Officer.
 
 ## Event pay
 

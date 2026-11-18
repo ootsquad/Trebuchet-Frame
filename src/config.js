@@ -76,18 +76,26 @@ export const CONFIG = Object.freeze({
 
   // Roblox groups. The API key must be made by the account ranked Artificial Intelligence in every group.
   groups: Object.freeze({
+    project: env('GROUP_PROJECT_ID', '1039001311'),
     unsc: env('GROUP_UNSC_ID', '4615211'),
     marines: env('GROUP_MARINES_ID', '4615235'),
+    navy: env('GROUP_NAVY_ID'),
+    materials: env('GROUP_MATERIALS_ID', '911082331'),
+    vehicles: env('GROUP_VEHICLES_ID', '287151398'),
     divisions: Object.freeze({
-      odst: env('GROUP_105TH_ODST_ID'),
+      odst: env('GROUP_ODST_ID') || env('GROUP_105TH_ODST_ID') || '547482530',
+      mid: env('GROUP_1ST_MID_ID', '106191092'),
+      mfr: env('GROUP_3RD_MFR_ID') || env('GROUP_3RD_MRU_ID') || '126808444',
       aar: env('GROUP_75TH_AAR_ID'),
-      mfr: env('GROUP_3RD_MFR_ID') || env('GROUP_3RD_MRU_ID'),
-      mcsb: env('GROUP_7TH_MCSB_ID'),
-      mid: env('GROUP_1ST_MID_ID')
+      mcsb: env('GROUP_7TH_MCSB_ID')
     }),
-    leftMarinesRank: env('UNSC_LEFT_MARINES_RANK', 'Registered Civilian'),
-    unWavedRank: env('UNSC_UNWAVED_RANK', 'Undocumented Refugee'),
-    wavedRank: env('UNSC_WAVED_RANK', 'Registered Civilian')
+    leftMarinesRank: env('UNSC_LEFT_RANK') || env('UNSC_LEFT_MARINES_RANK') || 'Registered Civilian',
+    // Waving: this role in the Project: Trebuchet group.
+    wavedRole: env('PROJECT_WAVED_ROLE', 'Waved')
+  }),
+
+  ranking: Object.freeze({
+    meritPerRank: Math.max(1, num('MERIT_PER_RANK', 200))
   }),
 
   sync: Object.freeze({

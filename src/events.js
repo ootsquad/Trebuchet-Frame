@@ -11,8 +11,7 @@ import {
 } from 'discord.js';
 import { CONFIG } from './config.js';
 import { EVENT_TYPES, attendeePay, dayKey, hostPay, parseNames } from './rewards.js';
-import { LADDERS, nextRank, promotionFor } from './ranks.js';
-import { DIVISIONS, MARINES, UNSC } from './groups.js';
+import { GROUPS } from './groups.js';
 
 const PREVIEW_MINUTES = 15;
 
@@ -30,7 +29,7 @@ const lines = (rows, max = 3900) => {
   return text || 'None';
 };
 
-export function createEvents({ client, store, roblox }) {
+export function createEvents({ client, store, roblox, ranking }) {
   const pending = new Map();
 
   function enabled() {
@@ -107,28 +106,6 @@ export function createEvents({ client, store, roblox }) {
     await interaction.editReply({ embeds: [embed], components: [buttons] });
   }
 
-  // The first division group they are in, and their rank there.
-  async function divisionOf(account) {
-    for (const division of DIVISIONS) {
-      const rank = await roblox.getRank(division.groupId, account.id).catch(() => null);
-      if (rank) return { division, rank };
-    }
-    return null;
-  }
-
-  // Promotes inside their division group when their merit reaches the next automatic rank.
-  async function promote(account) {
-    const found = await divisionOf(account);
-    const ladder = found ? LADDERS[found.division.key] || [] : [];
-    if (!ladder.length) return null;
-    const economy = await roblox.getEconomy(account.id);
-    const merit = economy.merit + economy.pendingMerit;
-    const target = promotionFor(ladder, found.rank, merit);
-    if (!target) return null;
-    await roblox.setRank(found.division.groupId, account.id, target.name);
-    return { account, from: found.rank, to: `${target.name} (${found.division.rank})`, merit };
-  }
-
   async function confirm(interaction, id) {
     const plan = pending.get(id);
     if (!plan || plan.expires < Date.now()) {
@@ -176,12 +153,14 @@ export function createEvents({ client, store, roblox }) {
     });
 
     const promotions = [];
-    if (CONFIG.events.autoPromote && DIVISIONS.length) {
+    if (CONFIG.events.autoPromote) {
       const people = [...paid.map((row) => row.account), ...(plan.hostLink && !plan.host.reason ? [plan.hostLink] : [])];
       for (const account of people) {
         try {
-          const result = await promote(account);
-          if (result) promotions.push(result);
+          const economy = await roblox.getEconomy(account.id);
+          for (const result of await ranking.checkPromotions(account, economy.merit + economy.pendingMerit)) {
+            promotions.push({ account, to: `${result.to} (${result.group.short})${result.pending ? ', waiting for approval' : ''}` });
+          }
         } catch (error) {
           console.error(`[Event ${id}] Promotion check for ${account.name}`, error);
         }
@@ -205,16 +184,6 @@ export function createEvents({ client, store, roblox }) {
 
     const channel = await client.channels.fetch(CONFIG.channels.eventLogs);
     await channel.send({ embeds: [log], allowedMentions: { parse: [] } });
-    if (promotions.length && CONFIG.channels.promotions) {
-      const promo = await client.channels.fetch(CONFIG.channels.promotions);
-      await promo.send({
-        embeds: [new EmbedBuilder()
-          .setTitle('Promotions')
-          .setColor(0xd6b24a)
-          .setDescription(lines(promotions.map((p) => `${p.account.name} is now ${p.to} (${p.merit} merit)`)))
-          .setTimestamp()]
-      });
-    }
     await interaction.editReply({ content: `Done. ${paid.length} paid${failed.length ? `, ${failed.length} failed (see the log)` : ''}.`, embeds: [log] });
   }
 
@@ -245,20 +214,25 @@ export function createEvents({ client, store, roblox }) {
       }
       account = link;
     }
-    const [economy, unscRank, marineRank, division] = await Promise.all([
+    const [economy, ...groupRanks] = await Promise.all([
       roblox.getEconomy(account.id),
-      roblox.getRank(UNSC.groupId, account.id).catch(() => null),
-      roblox.getRank(MARINES.groupId, account.id).catch(() => null),
-      divisionOf(account)
+      ...GROUPS.map((group) => roblox.getRank(group.groupId, account.id).catch(() => null))
     ]);
     const total = economy.merit + economy.pendingMerit;
-    const ladder = division ? LADDERS[division.division.key] || [] : [];
-    const next = ladder.length ? nextRank(ladder, total) : null;
-    const ranks = [
-      unscRank && `UNSC: ${unscRank}`,
-      marineRank && `Marine Corps: ${marineRank}`,
-      division && `${division.division.rank}: ${division.rank}`
-    ].filter(Boolean);
+    const ranks = GROUPS.map((group, index) => groupRanks[index] && `**${group.short}:** ${groupRanks[index]}`).filter(Boolean);
+    // Progress toward the next merit step in each group that has a ladder.
+    const steps = [];
+    GROUPS.forEach((group, index) => {
+      const ladder = store.data.ladders?.[group.key];
+      const current = groupRanks[index];
+      if (!ladder?.ranks?.length || !current) return;
+      const at = ladder.ranks.findIndex((name) => name.toLowerCase() === current.toLowerCase());
+      if (at < 0 || at >= ladder.ranks.length - 1) return;
+      const base = store.data.meritBase?.[`${group.key}:${account.id}`];
+      const earned = typeof base === 'number' ? total - base : 0;
+      steps.push(`**${group.short}:** ${ladder.ranks[at + 1]} at ${Math.max(0, CONFIG.ranking.meritPerRank - earned)} more merit`);
+    });
+    const next = steps.length ? steps.join('\n') : null;
     const embed = new EmbedBuilder()
       .setTitle(`${account.name}'s service record`)
       .setColor(CONFIG.brandColor)
@@ -266,7 +240,7 @@ export function createEvents({ client, store, roblox }) {
         { name: 'Ranks', value: ranks.join('\n') || 'Not in any UNSC group' },
         { name: 'Merit', value: `${total}${economy.pendingMerit ? ` (${economy.pendingMerit} on the way)` : ''}`, inline: true },
         { name: 'Credits', value: `${economy.credits + economy.pendingCredits} cR${economy.pendingCredits ? ` (${economy.pendingCredits} on the way)` : ''}`, inline: true },
-        { name: 'Next rank', value: next ? `${next.name} at ${next.merit} merit (${Math.max(0, next.merit - total)} to go)` : ladder.length ? 'Top of the merit ladder' : 'No merit ladder for their division yet' }
+        { name: 'Next rank', value: next || 'No merit promotion waiting in their groups.' }
       );
     if (!economy.found) embed.setFooter({ text: 'No game save yet. It is made the first time they join the game.' });
     await interaction.editReply({ embeds: [embed] });

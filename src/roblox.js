@@ -132,20 +132,31 @@ export class RobloxService {
     return role;
   }
 
-  // The member's rank name in the group, or null when they are not in it.
-  async getRank(groupId, robloxUserId) {
+  // The member's roles in the group, highest first: [{ name, rank, path }]. Empty when they are not in it.
+  // (Groups using Roblox's newer roles can give a member more than one role.)
+  async getRoles(groupId, robloxUserId) {
     const filter = encodeURIComponent(`user == 'users/${robloxUserId}'`);
     const body = await this.openCloud(`/cloud/v2/groups/${groupId}/memberships?maxPageSize=10&filter=${filter}`);
     const membership = (body?.groupMemberships || body?.memberships || [])[0];
-    if (!membership) return null;
-    const rolePath = membership.role || (Array.isArray(membership.roles) ? membership.roles[0] : null);
-    return rolePath ? this.roleNameOf(groupId, rolePath) : null;
+    if (!membership) return [];
+    const paths = [membership.role, ...(Array.isArray(membership.roles) ? membership.roles : [])].filter(Boolean);
+    const roles = await this.listRoles(groupId);
+    const found = [...new Set(paths)].map((rolePath) => {
+      const role = roles.find((entry) => entry.path === rolePath || roleId(entry) === String(rolePath).split('/').pop());
+      return { name: roleName(role) || String(rolePath).split('/').pop(), rank: Number(role?.rank) || 0, path: role?.path || rolePath };
+    });
+    return found.sort((a, b) => b.rank - a.rank);
   }
 
-  // Every member of a group: Map of user id -> rank name.
+  // The member's top rank name in the group, or null when they are not in it.
+  async getRank(groupId, robloxUserId) {
+    return (await this.getRoles(groupId, robloxUserId))[0]?.name || null;
+  }
+
+  // Every member of a group: Map of user id -> top rank name.
   async listMembers(groupId) {
     const roles = await this.listRoles(groupId, { force: true });
-    const names = new Map(roles.map((role) => [role.path || `groups/${groupId}/roles/${roleId(role)}`, roleName(role)]));
+    const byPath = new Map(roles.map((role) => [role.path || `groups/${groupId}/roles/${roleId(role)}`, role]));
     const members = new Map();
     let pageToken = '';
     do {
@@ -154,12 +165,21 @@ export class RobloxService {
       const body = await this.openCloud(`/cloud/v2/groups/${groupId}/memberships?${query}`);
       for (const membership of body?.groupMemberships || []) {
         const userId = String(membership.user || '').split('/').pop();
-        const rolePath = membership.role || (Array.isArray(membership.roles) ? membership.roles[0] : '');
-        if (userId) members.set(userId, names.get(rolePath) || String(rolePath).split('/').pop());
+        const paths = [membership.role, ...(Array.isArray(membership.roles) ? membership.roles : [])].filter(Boolean);
+        const top = paths.map((path) => byPath.get(path)).filter(Boolean).sort((a, b) => (b.rank || 0) - (a.rank || 0))[0];
+        if (userId) members.set(userId, roleName(top) || String(paths[0] || '').split('/').pop());
       }
       pageToken = body?.nextPageToken || '';
     } while (pageToken);
     return members;
+  }
+
+  async #roleCall(groupId, robloxUserId, role, verb) {
+    const rolePath = role.path || `groups/${groupId}/roles/${roleId(role)}`;
+    return this.openCloud(`/cloud/v2/groups/${groupId}/memberships/${robloxUserId}:${verb}`, {
+      method: 'POST',
+      body: JSON.stringify({ role: rolePath })
+    });
   }
 
   // Gives one rank in the group (Roblox swaps out the old one).
@@ -168,29 +188,52 @@ export class RobloxService {
     if (!before) throw new Error(`Roblox user ${robloxUserId} is not in group ${groupId}. They need to join it first.`);
     const target = await this.findRole(groupId, rankName);
     if (before.toLowerCase() === roleName(target).toLowerCase()) return { before, rank: before, changed: false };
-    const rolePath = target.path || `groups/${groupId}/roles/${roleId(target)}`;
-    await this.openCloud(`/cloud/v2/groups/${groupId}/memberships/${robloxUserId}:assignRole`, {
-      method: 'POST',
-      body: JSON.stringify({ role: rolePath })
-    });
+    await this.#roleCall(groupId, robloxUserId, target, 'assignRole');
     const after = await this.getRank(groupId, robloxUserId);
     if (String(after).toLowerCase() !== roleName(target).toLowerCase()) {
-      throw new Error(`Roblox did not confirm "${roleName(target)}" in group ${groupId} for user ${robloxUserId}. The bot account's rank must be above it.`);
+      throw new Error(`Roblox did not confirm "${roleName(target)}" in group ${groupId} for user ${robloxUserId}. The bot account must be able to manage that rank.`);
     }
     return { before, rank: after, changed: true };
   }
 
-  // Wave applications: Undocumented Refugee -> Registered Civilian in the UNSC group.
-  async waveMember(robloxUserId) {
-    const { unsc, unWavedRank, wavedRank } = CONFIG.groups;
-    const current = await this.getRank(unsc, robloxUserId);
-    if (!current) throw new Error(`Roblox user ${robloxUserId} has not joined the UNSC group yet. They need to join it first.`);
-    if (current.toLowerCase() === wavedRank.toLowerCase()) return { rank: wavedRank, alreadyWaved: true };
-    if (current.toLowerCase() !== unWavedRank.toLowerCase()) {
-      throw new Error(`Roblox user ${robloxUserId} is ${current} in the UNSC group, not ${unWavedRank}.`);
-    }
-    const result = await this.setRank(unsc, robloxUserId, wavedRank);
-    return { rank: result.rank, alreadyWaved: false };
+  // Adds or removes one role without touching the member's other roles (Project: Trebuchet's Waved role).
+  async addRole(groupId, robloxUserId, name) {
+    await this.#roleCall(groupId, robloxUserId, await this.findRole(groupId, name), 'assignRole');
+  }
+
+  async removeRole(groupId, robloxUserId, name) {
+    await this.#roleCall(groupId, robloxUserId, await this.findRole(groupId, name), 'unassignRole');
+  }
+
+  // ---------- join requests ----------
+
+  async listJoinRequests(groupId, { max = 25 } = {}) {
+    const requests = [];
+    let pageToken = '';
+    do {
+      const query = new URLSearchParams({ maxPageSize: String(Math.min(20, max)) });
+      if (pageToken) query.set('pageToken', pageToken);
+      const body = await this.openCloud(`/cloud/v2/groups/${groupId}/join-requests?${query}`);
+      for (const request of body?.groupJoinRequests || body?.joinRequests || []) {
+        requests.push({ userId: String(request.user || '').split('/').pop(), at: request.createTime || null });
+      }
+      pageToken = body?.nextPageToken || '';
+    } while (pageToken && requests.length < max);
+    return requests.slice(0, max);
+  }
+
+  async hasJoinRequest(groupId, robloxUserId) {
+    const filter = encodeURIComponent(`user == 'users/${robloxUserId}'`);
+    const body = await this.openCloud(`/cloud/v2/groups/${groupId}/join-requests?maxPageSize=10&filter=${filter}`);
+    return (body?.groupJoinRequests || body?.joinRequests || []).length > 0;
+  }
+
+  async acceptJoinRequest(groupId, robloxUserId) {
+    return this.openCloud(`/cloud/v2/groups/${groupId}/join-requests/${robloxUserId}:accept`, { method: 'POST', body: '{}' });
+  }
+
+  async declineJoinRequest(groupId, robloxUserId) {
+    return this.openCloud(`/cloud/v2/groups/${groupId}/join-requests/${robloxUserId}:decline`, { method: 'POST', body: '{}' });
   }
 
   // ---------- the game's economy save (Open Cloud data stores v1) ----------

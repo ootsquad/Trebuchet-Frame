@@ -8,6 +8,7 @@ import {
 import { CONFIG } from './config.js';
 import { checkPhrase, makePhrase } from './verify.js';
 import { COLORS, buttons, card, note, profileUrl, verifyCard } from './ui.js';
+import { groupByKey } from './groups.js';
 
 const SECTION = 'Wave Application';
 const TOTAL_STEPS = 17;
@@ -148,7 +149,7 @@ function accountAge(created) {
   return `<t:${Math.floor(date.getTime() / 1000)}:D>\n${days < 30 ? '⚠️ ' : ''}${span} old`;
 }
 
-function buildApplicationEmbeds({ member, robloxUser, age, knowledge, agreements, unscRank, profile, headshot }) {
+function buildApplicationEmbeds({ member, robloxUser, age, knowledge, agreements, projectStatus, profile, headshot }) {
   const agreedCount = Object.values(agreements).filter(Boolean).length;
   const agreed = agreedCount === 4;
   const missing = [
@@ -170,7 +171,7 @@ function buildApplicationEmbeds({ member, robloxUser, age, knowledge, agreements
       { name: 'Ownership', value: '✅ Verified', inline: true },
       { name: 'Agreements', value: agreed ? '✅ 4 of 4' : `❌ ${agreedCount} of 4\nMissing: ${missing.join(', ')}`, inline: true },
       { name: 'Roblox joined', value: accountAge(profile?.created), inline: true },
-      { name: 'UNSC group', value: unscRank ? unscRank : '⚠️ Not in the group yet. Approval will fail until they join.' }
+      { name: 'Project: Trebuchet group', value: projectStatus }
     )
     .setFooter({ text: 'Submitted' })
     .setTimestamp();
@@ -211,7 +212,27 @@ async function updateApplicationStatus(message, { status, moderator, note = null
   await message.edit({ embeds: [first, ...remaining], components: [buildDecisionRow(parsed.discordUserId, parsed.robloxUserId, true)] });
 }
 
-export function createApplicationService({ client, roblox, store }) {
+export function createApplicationService({ client, roblox, store, ranking = null, sync = null }) {
+  const project = () => groupByKey('project');
+
+  // Project: Trebuchet: accept their join request if they have one, then give the Waved role.
+  async function waveInProject(robloxUserId) {
+    const group = project();
+    if (!group) return { note: 'No Project: Trebuchet group set, so no Roblox role was given.' };
+    let roles = await roblox.getRoles(group.groupId, robloxUserId);
+    let accepted = false;
+    if (!roles.length) {
+      if (!(await roblox.hasJoinRequest(group.groupId, robloxUserId).catch(() => false))) {
+        throw new Error('They are not in the Project: Trebuchet group and have not asked to join. Have them send a join request, then approve again.');
+      }
+      await roblox.acceptJoinRequest(group.groupId, robloxUserId);
+      accepted = true;
+      roles = await roblox.getRoles(group.groupId, robloxUserId);
+    }
+    const already = roles.some((role) => role.name.toLowerCase() === CONFIG.groups.wavedRole.toLowerCase());
+    if (!already) await roblox.addRole(group.groupId, robloxUserId, CONFIG.groups.wavedRole);
+    return { accepted, already };
+  }
   async function start(member, source = 'join') {
     if (!member || member.user.bot || activeApplicants.has(member.id)) return;
     if (member.roles.cache.has(CONFIG.roles.communityMember)) return;
@@ -335,8 +356,15 @@ export function createApplicationService({ client, roblox, store }) {
         agreements[key] = pressed === 'wavedm:yes';
       }
 
-      let unscRank = null;
-      try { unscRank = await roblox.getRank(CONFIG.groups.unsc, robloxUser.id); } catch (error) { await reportError(client, 'Checking applicant Roblox membership', error); }
+      let projectStatus = 'Unknown';
+      if (project()) {
+        try {
+          const roles = await roblox.getRoles(project().groupId, robloxUser.id);
+          if (roles.length) projectStatus = `✅ Member (${roles.map((role) => role.name).join(', ')})`;
+          else if (await roblox.hasJoinRequest(project().groupId, robloxUser.id)) projectStatus = '🕓 Join request waiting. Approving accepts it.';
+          else projectStatus = '⚠️ Not in the group and no join request. Approval will fail until they ask to join.';
+        } catch (error) { await reportError(client, 'Checking applicant Roblox membership', error); }
+      }
       const [profile, headshot] = await Promise.all([
         roblox.getProfile(robloxUser.id).catch(() => null),
         roblox.headshotUrl(robloxUser.id).catch(() => null)
@@ -348,7 +376,7 @@ export function createApplicationService({ client, roblox, store }) {
         age: ageAnswer.answer,
         knowledge,
         agreements,
-        unscRank,
+        projectStatus,
         profile,
         headshot
       });
@@ -405,13 +433,13 @@ export function createApplicationService({ client, roblox, store }) {
           throw new Error('This applicant did not accept every required agreement. Have them submit a new application before approving.');
         }
 
-        const robloxResult = await roblox.waveMember(parsed.robloxUserId);
-        const guildMember = await message.guild.members.fetch(parsed.discordUserId);
-        const linked = await roblox.resolveUser(parsed.robloxUserId).catch(() => ({ id: parsed.robloxUserId, name: parsed.robloxUserId }));
         const owner = store.discordFor(parsed.robloxUserId);
         if (owner && owner !== parsed.discordUserId) {
           throw new Error(`That Roblox account is already linked to <@${owner}>. Sort that out before approving.`);
         }
+        const robloxResult = await waveInProject(parsed.robloxUserId);
+        const guildMember = await message.guild.members.fetch(parsed.discordUserId);
+        const linked = await roblox.resolveUser(parsed.robloxUserId).catch(() => ({ id: parsed.robloxUserId, name: parsed.robloxUserId }));
         store.link(parsed.discordUserId, linked);
         await guildMember.roles.add(CONFIG.roles.communityMember, `Wave application approved by ${moderator.user.tag}`);
         if (guildMember.roles.cache.has(CONFIG.roles.unWaved)) {
@@ -421,8 +449,14 @@ export function createApplicationService({ client, roblox, store }) {
         await updateApplicationStatus(message, {
           status: 'APPROVED',
           moderator,
-          note: `UNSC rank: ${robloxResult.rank}${robloxResult.alreadyWaved ? ' (already had it)' : ''}. Discord member role given. Discord and Roblox accounts linked.`
+          note: robloxResult.note || `${robloxResult.accepted ? 'Join request accepted. ' : ''}${CONFIG.groups.wavedRole} role ${robloxResult.already ? 'already held' : 'given'} in Project: Trebuchet. Discord role given. Accounts linked.`
         });
+        if (ranking && project()) {
+          await ranking.logChange({
+            group: project(), target: linked, from: robloxResult.accepted ? 'Join request' : 'Member', to: CONFIG.groups.wavedRole,
+            by: `<@${moderator.id}> (Wave Moderator)`, reason: 'Wave application approved', color: COLORS.good
+          }).catch(() => {});
+        }
 
         try { await guildMember.send({ embeds: [card({ section: SECTION, title: 'Application approved', color: COLORS.good, description: `Welcome to ${CONFIG.brandName}. You now have access to the rest of the server.` })] }); } catch {}
         if (interaction) await interaction.editReply('Approved. Roblox and Discord roles were updated.');
@@ -460,5 +494,32 @@ export function createApplicationService({ client, roblox, store }) {
     return true;
   }
 
-  return { start, handleButton };
+  // /unwave: takes the Waved role away in Project: Trebuchet and Discord.
+  async function unwave(interaction) {
+    if (!moderatorAllowed(interaction.member)) throw new Error('Only Wave Moderators can unwave people.');
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const user = interaction.options.getUser('member', true);
+    const reason = interaction.options.getString('reason', true);
+    const link = store.linkedRoblox(user.id);
+    const done = [];
+    if (link && project()) {
+      const roles = await roblox.getRoles(project().groupId, link.id);
+      if (roles.some((role) => role.name.toLowerCase() === CONFIG.groups.wavedRole.toLowerCase())) {
+        await roblox.removeRole(project().groupId, link.id, CONFIG.groups.wavedRole);
+        done.push(`${CONFIG.groups.wavedRole} removed in Project: Trebuchet`);
+      }
+    }
+    const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+    if (member) {
+      if (member.roles.cache.has(CONFIG.roles.communityMember)) await member.roles.remove(CONFIG.roles.communityMember, `Unwaved by ${interaction.user.tag}: ${reason}`);
+      if (CONFIG.roles.unWaved && !member.roles.cache.has(CONFIG.roles.unWaved)) await member.roles.add(CONFIG.roles.unWaved, `Unwaved by ${interaction.user.tag}`);
+      done.push('Discord role swapped back to Un-Waved');
+    }
+    if (ranking && project() && link) {
+      await ranking.logChange({ group: project(), target: link, from: CONFIG.groups.wavedRole, to: 'Not waved', by: `<@${interaction.user.id}> (Wave Moderator)`, reason, color: COLORS.bad }).catch(() => {});
+    }
+    await interaction.editReply(done.length ? `Unwaved <@${user.id}>: ${done.join('. ')}.` : 'Nothing to take away: they had no Waved role.');
+  }
+
+  return { start, handleButton, unwave };
 }

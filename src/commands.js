@@ -11,16 +11,8 @@ const linkButtons = (account) => buttons([
 const pendingLinks = new Map();
 import { CONFIG } from './config.js';
 import { EVENT_TYPES } from './rewards.js';
-import { UNSC } from './groups.js';
 
 const eventChoices = Object.entries(EVENT_TYPES).map(([value, event]) => ({ name: event.name, value }));
-
-function groupChoices() {
-  const choices = [{ name: 'UNSC', value: CONFIG.groups.unsc }, { name: 'Marine Corps', value: CONFIG.groups.marines }];
-  const names = { odst: '105th ODST', aar: '75th AAR', mfr: '3rd MFR', mcsb: '7th MCSB', mid: '1st MID' };
-  for (const [key, id] of Object.entries(CONFIG.groups.divisions)) if (id) choices.push({ name: names[key], value: id });
-  return choices;
-}
 
 export const commandData = [
   new SlashCommandBuilder()
@@ -76,10 +68,36 @@ export const commandData = [
 
   new SlashCommandBuilder()
     .setName('rank')
-    .setDescription('Staff: set a rank in one of the groups.')
+    .setDescription('Change a rank in a group you command. You only see your own groups and ranks below yours.')
+    .addStringOption((o) => o.setName('group').setDescription('A group you manage').setRequired(true).setAutocomplete(true))
     .addStringOption((o) => o.setName('roblox_user').setDescription('Roblox username or user ID').setRequired(true))
-    .addStringOption((o) => o.setName('new_rank').setDescription('Exact rank name').setRequired(true).setMaxLength(100))
-    .addStringOption((o) => o.setName('group').setDescription('Which group (default UNSC)').addChoices(...groupChoices())),
+    .addStringOption((o) => o.setName('new_rank').setDescription('The new rank').setRequired(true).setAutocomplete(true))
+    .addStringOption((o) => o.setName('reason').setDescription('Shown in the rank log').setMaxLength(500)),
+
+  new SlashCommandBuilder()
+    .setName('license')
+    .setDescription('Vehicle & Flight Certification: give or change a driving or flying license.')
+    .addStringOption((o) => o.setName('roblox_user').setDescription('Roblox username or user ID').setRequired(true))
+    .addStringOption((o) => o.setName('new_rank').setDescription('The certification').setRequired(true).setAutocomplete(true))
+    .addStringOption((o) => o.setName('reason').setDescription('Shown in the rank log').setMaxLength(500)),
+
+  new SlashCommandBuilder()
+    .setName('pending')
+    .setDescription('See and accept or decline join requests for a group you manage.')
+    .addStringOption((o) => o.setName('group').setDescription('A group you manage').setRequired(true).setAutocomplete(true)),
+
+  new SlashCommandBuilder()
+    .setName('ladder')
+    .setDescription('View or set the merit ladder of a group you command.')
+    .addStringOption((o) => o.setName('group').setDescription('A group you manage').setRequired(true).setAutocomplete(true))
+    .addStringOption((o) => o.setName('ranks').setDescription('Lowest first, like: Private > Lance Corporal > Corporal. Leave empty to view.').setMaxLength(1000))
+    .addStringOption((o) => o.setName('approval_rank').setDescription('The rank that needs a commander to approve (default: the last one)')),
+
+  new SlashCommandBuilder()
+    .setName('unwave')
+    .setDescription('Wave Moderators: take the Waved role away in Project: Trebuchet and Discord.')
+    .addUserOption((o) => o.setName('member').setDescription('The Discord member').setRequired(true))
+    .addStringOption((o) => o.setName('reason').setDescription('Why').setRequired(true).setMaxLength(500)),
 
   new SlashCommandBuilder()
     .setName('sync')
@@ -119,7 +137,14 @@ export async function handleLinkButton(interaction, { store }) {
   return true;
 }
 
-export async function handleCommand(interaction, { applications, suggestions, announcements, events, sync, roblox, store }) {
+export async function handleAutocomplete(interaction, { ranking }) {
+  if (!interaction.isAutocomplete()) return false;
+  if (interaction.commandName === 'pending') await ranking.pendingAutocomplete(interaction).catch(() => interaction.respond([]).catch(() => {}));
+  else await ranking.autocomplete(interaction);
+  return true;
+}
+
+export async function handleCommand(interaction, { applications, suggestions, announcements, events, sync, ranking, roblox, store }) {
   if (!interaction.isChatInputCommand()) return false;
   const name = interaction.commandName;
 
@@ -172,17 +197,10 @@ export async function handleCommand(interaction, { applications, suggestions, an
     return true;
   }
 
-  if (name === 'rank') {
-    if (!isStaff(interaction.member)) {
-      await interaction.reply({ content: 'You need the Wave Moderator role or Manage Server to set ranks.', flags: MessageFlags.Ephemeral });
-      return true;
-    }
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    const user = await roblox.resolveUser(interaction.options.getString('roblox_user', true));
-    const groupId = interaction.options.getString('group') || UNSC.groupId;
-    const result = await roblox.setRank(groupId, user.id, interaction.options.getString('new_rank', true));
-    await interaction.editReply(`${user.name}: ${result.before} -> ${result.rank}${result.changed ? '' : ' (no change)'}.`);
-    return true;
-  }
+  if (name === 'rank') return ranking.rankCommand(interaction).then(() => true);
+  if (name === 'license') return ranking.rankCommand(interaction, 'vehicles').then(() => true);
+  if (name === 'pending') return ranking.pendingCommand(interaction).then(() => true);
+  if (name === 'ladder') return ranking.ladderCommand(interaction).then(() => true);
+  if (name === 'unwave') return applications.unwave(interaction).then(() => true);
   return false;
 }

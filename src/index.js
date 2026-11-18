@@ -9,7 +9,9 @@ import { createLeaks } from './leaks.js';
 import { createAnnouncements } from './announcements.js';
 import { createEvents } from './events.js';
 import { createSync } from './sync.js';
-import { handleCommand, handleLinkButton, registerCommands } from './commands.js';
+import { handleAutocomplete, handleCommand, handleLinkButton, registerCommands } from './commands.js';
+import { createAccess } from './access.js';
+import { createRanking } from './ranking.js';
 
 validateConfig();
 for (const problem of featureProblems()) console.warn(`[Setup] ${problem}`);
@@ -28,12 +30,14 @@ const client = new Client({
 
 const store = new JsonStore(CONFIG.dataDir);
 const roblox = new RobloxService();
-const applications = createApplicationService({ client, roblox, store });
+const access = createAccess({ roblox, store });
+const ranking = createRanking({ client, store, roblox, access });
 const suggestions = createSuggestions({ client, store });
 const leaks = createLeaks({ client, store });
 const announcements = createAnnouncements({ client });
-const events = createEvents({ client, store, roblox });
-const sync = createSync({ client, roblox });
+const events = createEvents({ client, store, roblox, ranking });
+const sync = createSync({ client, roblox, ranking });
+const applications = createApplicationService({ client, roblox, store, ranking, sync });
 
 client.once(Events.ClientReady, async (ready) => {
   console.log(`Discord connected as ${ready.user.tag}`);
@@ -69,11 +73,13 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
 
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
+    if (await handleAutocomplete(interaction, { ranking })) return;
     if (await applications.handleButton(interaction)) return;
+    if (await ranking.button(interaction)) return;
     if (await events.button(interaction)) return;
     if (await handleLinkButton(interaction, { store })) return;
     if (await announcements.submit(interaction)) return;
-    await handleCommand(interaction, { applications, suggestions, announcements, events, sync, roblox, store });
+    await handleCommand(interaction, { applications, suggestions, announcements, events, sync, ranking, roblox, store });
   } catch (error) {
     console.error(`[Interaction ${interaction.id}]`, error);
     if (!interaction.isRepliable()) return;
