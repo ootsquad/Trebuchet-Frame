@@ -5,24 +5,7 @@ import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'disc
 import { CONFIG } from './config.js';
 
 const TAG = 'Server Status';
-const WEATHER = {
-  Clear: '☀️ Clear', Cloudy: '☁️ Cloudy', Overcast: '☁️ Overcast', Rain: '🌧️ Rain', HeavyRain: '🌧️ Heavy rain',
-  FoggyRain: '🌫️ Foggy rain', Thunderstorm: '⛈️ Storm', Storm: '⛈️ Storm', Snow: '🌨️ Snow', Blizzard: '❄️ Blizzard',
-  Fog: '🌫️ Fog', Windy: '💨 Windy', BloodMoon: '🩸 Blood moon'
-};
 
-const pad = (value) => String(value).padStart(2, '0');
-const clock = (hour) => {
-  const value = Number(hour) || 0;
-  const h = Math.floor(value) % 24;
-  return `${pad(h)}:${pad(Math.floor((value - Math.floor(value)) * 60))}`;
-};
-const sky = (hour) => (hour >= 6.5 && hour < 18 ? '☀️' : hour >= 18 && hour < 19.5 ? '🌇' : hour >= 5 && hour < 6.5 ? '🌅' : '🌙');
-const bar = (count, max, width = 10) => {
-  const filled = max > 0 ? Math.min(width, Math.round((count / max) * width)) : 0;
-  return '▰'.repeat(filled) + '▱'.repeat(width - filled);
-};
-const duration = (minutes) => (minutes >= 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60}m` : `${minutes}m`);
 const compact = (value) => Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(Number(value) || 0);
 const dayKey = (date = new Date()) => date.toLocaleDateString('en-CA', { timeZone: CONFIG.timeZone });
 
@@ -79,16 +62,6 @@ export function createStatus({ client, roblox, store }) {
       );
     if (gameUrl) embed.setURL(gameUrl);
 
-    if (servers.length) {
-      embed.addFields({
-        name: 'Live servers',
-        value: servers.slice(0, 8).map((server, index) => {
-          const uptime = Math.max(0, Math.floor((seconds - (Number(server.Started) || seconds)) / 60));
-          const max = Number(server.Max) || info?.maxPlayers || 0;
-          return `**Server ${index + 1}**${server.Private ? '  🔒' : ''}\n\`${bar(server.Players || 0, max)}\` ${server.Players}/${max}\n-# ${sky(server.Hour)} ${clock(server.Hour)}  ·  ${WEATHER[server.Weather] || server.Weather || 'Unknown'}  ·  up ${duration(uptime)}`;
-        }).join('\n').slice(0, 1024)
-      });
-    }
     if (art.thumbnail) embed.setImage(art.thumbnail);
     embed.setFooter({ text: `${CONFIG.brandName} · Refreshes every minute` });
 
