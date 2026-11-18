@@ -49,6 +49,25 @@ export const commandData = [
     .addStringOption((o) => o.setName('notes').setDescription('Anything to note in the log').setMaxLength(1000)),
 
   new SlashCommandBuilder()
+    .setName('schedule')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .setDescription('Event hosts: post an upcoming event people can sign up for.')
+    .addStringOption((o) => o.setName('type').setDescription('Event type').setRequired(true).addChoices(...eventChoices))
+    .addStringOption((o) => o.setName('when').setDescription(`Start time, e.g. 2026-11-20 19:30, 7:30pm, tomorrow 19:00, in 2h (${CONFIG.timeZone})`).setRequired(true).setMaxLength(40))
+    .addStringOption((o) => o.setName('title').setDescription('A name for the event').setMaxLength(100))
+    .addStringOption((o) => o.setName('description').setDescription('Briefing, location, requirements').setMaxLength(2000))
+    .addBooleanOption((o) => o.setName('ping').setDescription('Ping the event notification role (default yes)')),
+
+  new SlashCommandBuilder()
+    .setName('events')
+    .setDescription('Show upcoming scheduled events.'),
+
+  new SlashCommandBuilder()
+    .setName('leaderboard')
+    .setDescription('Weekly leaderboard: merit, playtime, kills, events and operations.')
+    .addStringOption((o) => o.setName('week').setDescription('Which week').addChoices({ name: 'This week', value: 'this' }, { name: 'Last week', value: 'last' })),
+
+  new SlashCommandBuilder()
     .setName('profile')
     .setDescription('Show merit, cR and rank.')
     .addUserOption((o) => o.setName('member').setDescription('A Discord member (uses their linked Roblox account)'))
@@ -147,7 +166,7 @@ export async function handleAutocomplete(interaction, { ranking }) {
   return true;
 }
 
-export async function handleCommand(interaction, { applications, suggestions, announcements, events, sync, ranking, blacklist, roblox, store }) {
+export async function handleCommand(interaction, { applications, suggestions, announcements, events, sync, ranking, blacklist, roblox, store, schedule, leaderboards }) {
   if (!interaction.isChatInputCommand()) return false;
   const name = interaction.commandName;
 
@@ -160,6 +179,9 @@ export async function handleCommand(interaction, { applications, suggestions, an
   if (name === 'announce') return announcements.command(interaction).then(() => true);
   if (name === 'event') return events.command(interaction).then(() => true);
   if (name === 'profile') return events.profile(interaction).then(() => true);
+  if (name === 'schedule') return schedule.command(interaction).then(() => true);
+  if (name === 'events') return schedule.upcoming(interaction).then(() => true);
+  if (name === 'leaderboard') return leaderboards.command(interaction).then(() => true);
   if (name === 'grant') return events.grant(interaction).then(() => true);
   if (name === 'sync') return sync.command(interaction).then(() => true);
 

@@ -14,6 +14,9 @@ import { createAccess } from './access.js';
 import { createRanking } from './ranking.js';
 import { createBlacklist } from './blacklist.js';
 import { createRankPanel } from './panel.js';
+import { createSchedule } from './schedule.js';
+import { createLeaderboards } from './leaderboards.js';
+import { createStatus } from './status.js';
 
 validateConfig();
 for (const problem of featureProblems()) console.warn(`[Setup] ${problem}`);
@@ -42,6 +45,10 @@ const sync = createSync({ client, roblox, ranking });
 const blacklist = createBlacklist({ client, store, roblox });
 const applications = createApplicationService({ client, roblox, store, ranking, sync, blacklist });
 const panel = createRankPanel({ client, store, roblox, access, ranking });
+const schedule = createSchedule({ client, store, events });
+events.hooks.logged = schedule.markLogged;
+const leaderboards = createLeaderboards({ client, store, roblox });
+const status = createStatus({ client, roblox });
 
 client.once(Events.ClientReady, async (ready) => {
   console.log(`Discord connected as ${ready.user.tag}`);
@@ -52,6 +59,9 @@ client.once(Events.ClientReady, async (ready) => {
     console.error('[Registering slash commands]', error);
   }
   sync.start();
+  schedule.start();
+  leaderboards.start();
+  status.start();
   await panel.post().catch((error) => console.error('[Rank panel]', error));
   // Blacklisted groups gain members over time: ban their linked accounts every sync period.
   setInterval(() => blacklist.enforce().catch((error) => console.error('[Blacklist]', error)), CONFIG.sync.everyMinutes * 60_000).unref();
@@ -86,10 +96,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (await applications.handleButton(interaction)) return;
     if (await ranking.button(interaction)) return;
     if (await events.button(interaction)) return;
+    if (await schedule.button(interaction)) return;
     if (await handleLinkButton(interaction, { store, blacklist })) return;
     if (await panel.handle(interaction)) return;
     if (await announcements.submit(interaction)) return;
-    await handleCommand(interaction, { applications, suggestions, announcements, events, sync, ranking, blacklist, roblox, store });
+    await handleCommand(interaction, { applications, suggestions, announcements, events, sync, ranking, blacklist, roblox, store, schedule, leaderboards });
   } catch (error) {
     console.error(`[Interaction ${interaction.id}]`, error);
     if (!interaction.isRepliable()) return;

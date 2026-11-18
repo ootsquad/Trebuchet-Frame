@@ -11,7 +11,7 @@ Discord bot for the UNSC community. It handles:
 - Events, merit and cR: `/event` previews pay for every attendee, the host confirms, and the bot sends merit and cR into each player's game save. Then it promotes by merit inside the division groups.
 - Rank panel: one message in the rank panel channel with buttons for changing ranks, join requests, vehicle licenses and look-ups.
 - Blacklist: `/blacklist` keeps a Roblox user, or a group and all its members, out of the game and both Discord servers. Only xaiver and sepernts (`BLACKLIST_ADMIN_IDS`) can use it.
-- `/rank`, `/license`, `/pending`, `/profile`, `/link`, `/grant`, `/sync`, `/unwave`, `/announce`, `/event`.
+- Rank panel (buttons in the rank panel channel), `/profile`, `/link`, `/grant`, `/sync`, `/unwave`, `/announce`, `/event`, `/schedule`, `/events`, `/leaderboard`, `/blacklist`.
 
 ## Groups and who manages them
 
@@ -70,7 +70,17 @@ Merit numbers are placeholders in `src/rewards.js`. The division merit ladders i
 
 Trebuchet Frame keeps an inbox per player in the `TrebuchetEconomyV1` data store (`inbox_<userId>`). The bot adds awards there through Roblox Open Cloud. The game pays them within about 2 minutes if the player is online, or when they next join, and never pays the same award twice. In game, Xp is shown as Merit.
 
+## Profiles, leaderboards, scheduling and server status
+
+- `/profile` shows ranks, merit, cR, playtime, operations, events attended (and this week), events hosted, kills, deaths, K/D and the next promotion. Playtime, kills and deaths come from the game save; events come from the bot's event logs.
+- `/leaderboard` shows this week or last week: merit earned, time played, kills (from the game's weekly ordered data stores `TrebuchetWeekly_<week>_Merit|Playtime|Kills`), events and operations (from event logs). Last week's board posts to `CHANNEL_LEADERBOARDS` every `LEADERBOARD_DAY` at `LEADERBOARD_HOUR`. Weeks run Monday to Sunday UTC in both the game and the bot.
+- `/schedule` (event hosts) posts an event card with Attending, Maybe and Can't buttons. 30 minutes before the start it pings the event notification role and everyone attending. The host presses **Log attendance** to open the pay preview with attending members' linked Roblox names filled in. `/events` lists what is coming up.
+- The server status card in `CHANNEL_SERVER_STATUS` updates every minute from the game's `TrebuchetStatus` data store (written by StatusService) and the public game numbers.
+
 ## Setup on Railway
+
+The Roblox API key also needs **ordered-data-stores: read** on the game (universe) for the leaderboards.
+
 
 1. Discord Developer Portal > Bot: turn on Server Members Intent and Message Content Intent.
 2. Invite the bot with: View Channels, Send Messages, Embed Links, Attach Files, Add Reactions, Read Message History, Manage Messages, Create Public Threads, Manage Roles. Commands work in every server the bot is in.

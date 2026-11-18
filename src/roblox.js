@@ -303,6 +303,22 @@ export class RobloxService {
     }
   }
 
+  // Top entries of an ordered data store, highest first: [{ id, value }].
+  async orderedTop(name, max = 10) {
+    const url = `https://apis.roblox.com/ordered-data-stores/v1/universes/${this.universeId}/orderedDataStores/${encodeURIComponent(name)}/scopes/global/entries?max_page_size=${max}&order_by=desc`;
+    const response = await fetch(url, { headers: { 'x-api-key': this.dataStoreKey } });
+    if (response.status === 404) return [];
+    const body = await parseResponse(response);
+    return (body?.entries || []).map((entry) => ({ id: String(entry.id), value: Number(entry.value) || 0 }));
+  }
+
+  // Public numbers for the game: name, players right now, visits.
+  async universeInfo() {
+    const body = await parseResponse(await fetch(`https://games.roblox.com/v1/games?universeIds=${this.universeId}`));
+    const game = body?.data?.[0];
+    return game ? { name: game.name, playing: game.playing, visits: game.visits, rootPlaceId: game.rootPlaceId, favorites: game.favoritedCount } : null;
+  }
+
   async groupInfo(groupId) {
     const body = await parseResponse(await fetch(`https://groups.roblox.com/v1/groups/${groupId}`));
     return { id: String(body.id), name: body.name, memberCount: body.memberCount };
@@ -317,6 +333,7 @@ export class RobloxService {
     const pending = Array.isArray(inbox) ? inbox : [];
     return {
       found: Boolean(save),
+      stats: save?.Stats && typeof save.Stats === 'object' ? save.Stats : {},
       merit: Number(save?.Xp) || 0,
       credits: Number(save?.Credits) || 0,
       pendingMerit: pending.reduce((sum, entry) => sum + (Number(entry?.Xp) || 0), 0),

@@ -34,6 +34,9 @@ export const CONFIG = Object.freeze({
     eventLogs: env('CHANNEL_EVENT_LOGS'),
     promotions: env('CHANNEL_PROMOTIONS'),
     rankLogs: env('CHANNEL_RANK_LOGS'),
+    leaderboards: env('CHANNEL_LEADERBOARDS'),
+    schedule: env('CHANNEL_EVENT_SCHEDULE') || env('CHANNEL_ANNOUNCEMENTS'),
+    status: env('CHANNEL_SERVER_STATUS', '1572511237370155048'),
     errors: env('CHANNEL_ERRORS')
   }),
 
@@ -106,6 +109,12 @@ export const CONFIG = Object.freeze({
   superAdmins: env('SUPER_ADMIN_IDS', '497730291,25698705').split(',').map((id) => id.trim()).filter(Boolean),
 
   rankPanel: env('CHANNEL_RANK_PANEL', '1572500360214483026'),
+
+  leaderboards: Object.freeze({
+    // When the weekly leaderboard is posted, in TIME_ZONE: Monday (1) at noon.
+    day: num('LEADERBOARD_DAY', 1),
+    hour: num('LEADERBOARD_HOUR', 12)
+  }),
 
   ranking: Object.freeze({
     meritPerRank: Math.max(1, num('MERIT_PER_RANK', 200))

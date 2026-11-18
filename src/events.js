@@ -12,6 +12,7 @@ import {
 import { CONFIG } from './config.js';
 import { EVENT_TYPES, attendeePay, dayKey, hostPay, parseNames } from './rewards.js';
 import { GROUPS } from './groups.js';
+import { attendance, formatPlaytime, weekIndex } from './stats.js';
 
 const PREVIEW_MINUTES = 15;
 
@@ -31,6 +32,7 @@ const lines = (rows, max = 3900) => {
 
 export function createEvents({ client, store, roblox, ranking }) {
   const pending = new Map();
+  const hooks = { logged: null };
 
   function enabled() {
     return Boolean(CONFIG.roblox.apiKey && CONFIG.roblox.universeId && CONFIG.channels.eventLogs);
@@ -46,17 +48,23 @@ export function createEvents({ client, store, roblox, ranking }) {
       return;
     }
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    await interaction.editReply(await preview({
+      hostDiscordId: interaction.user.id,
+      type: interaction.options.getString('type', true),
+      objective: interaction.options.getBoolean('objective_completed', true),
+      attendees: interaction.options.getString('attendees', true),
+      fallen: interaction.options.getString('fallen') || '',
+      notes: interaction.options.getString('notes') || ''
+    }));
+  }
 
-    const type = interaction.options.getString('type', true);
-    const objective = interaction.options.getBoolean('objective_completed', true);
-    const attendeeNames = parseNames(interaction.options.getString('attendees', true));
-    const fallenNames = parseNames(interaction.options.getString('fallen') || '');
-    const notes = interaction.options.getString('notes') || '';
+  // Works out everyone's pay and returns the preview card with Confirm and Cancel. Used by /event and by the
+  // Log attendance button on scheduled events. scheduleId ties the log back to the scheduled event.
+  async function preview({ hostDiscordId, type, objective, attendees, fallen: fallenText = '', notes = '', scheduleId = null }) {
+    const attendeeNames = parseNames(attendees);
+    const fallenNames = parseNames(fallenText);
     const names = parseNames([...attendeeNames, ...fallenNames].join(' '));
-    if (!names.length) {
-      await interaction.editReply('List at least one attendee by Roblox username.');
-      return;
-    }
+    if (!names.length) return { content: 'List at least one attendee by Roblox username.', embeds: [], components: [] };
 
     const accounts = await roblox.resolveUsernames(names);
     const byName = new Map(accounts.map((account) => [String(account.asked || account.name).toLowerCase(), account]));
@@ -74,14 +82,14 @@ export function createEvents({ client, store, roblox, ranking }) {
       return { account, ...pay };
     });
 
-    const hostLink = store.linkedRoblox(interaction.user.id);
+    const hostLink = store.linkedRoblox(hostDiscordId);
     const cooldownMs = CONFIG.events.hostCooldownHours * 3600_000;
-    const onCooldown = Date.now() - store.lastHostPay(interaction.user.id, type) < cooldownMs;
+    const onCooldown = Date.now() - store.lastHostPay(hostDiscordId, type) < cooldownMs;
     const host = hostPay(rows.length, { onCooldown });
     if (!hostLink && host.credits > 0) host.reason = 'link your Roblox account with /link to get host pay';
 
     const id = crypto.randomBytes(4).toString('hex');
-    pending.set(id, { id, type, objective, notes, rows, host, hostLink, hostId: interaction.user.id, today, expires: Date.now() + PREVIEW_MINUTES * 60_000 });
+    pending.set(id, { id, type, objective, notes, rows, host, hostLink, hostId: hostDiscordId, today, scheduleId, expires: Date.now() + PREVIEW_MINUTES * 60_000 });
 
     const event = EVENT_TYPES[type];
     const totalCredits = rows.reduce((sum, row) => sum + row.credits, 0) + (hostLink && !host.reason ? host.credits : 0);
@@ -103,7 +111,7 @@ export function createEvents({ client, store, roblox, ranking }) {
       new ButtonBuilder().setCustomId(`event:confirm:${id}`).setLabel('Confirm and pay').setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId(`event:cancel:${id}`).setLabel('Cancel').setStyle(ButtonStyle.Secondary)
     );
-    await interaction.editReply({ embeds: [embed], components: [buttons] });
+    return { content: '', embeds: [embed], components: [buttons] };
   }
 
   async function confirm(interaction, id) {
@@ -146,11 +154,13 @@ export function createEvents({ client, store, roblox, ranking }) {
     }
     store.recordEvent(id, {
       type: plan.type,
+      scheduleId: plan.scheduleId || null,
       host: plan.hostId,
       objective: plan.objective,
       at: new Date().toISOString(),
       attendees: paid.map((row) => ({ id: row.account.id, name: row.account.name, merit: row.merit, credits: row.credits }))
     });
+    if (plan.scheduleId && hooks.logged) await hooks.logged(plan.scheduleId, id).catch((error) => console.error('[Schedule log]', error));
 
     const promotions = [];
     if (CONFIG.events.autoPromote) {
@@ -222,15 +232,34 @@ export function createEvents({ client, store, roblox, ranking }) {
     const ranks = GROUPS.map((group, index) => groupRanks[index] && `**${group.short}:** ${groupRanks[index]}`).filter(Boolean);
     const steps = await ranking.nextSteps(account, total);
     const next = steps.length ? steps.join('\n') : null;
+    const stats = economy.stats || {};
+    const kills = (Number(stats.Kills) || 0) + (Number(stats.VehicleKills) || 0);
+    const deaths = Number(stats.Deaths) || 0;
+    const attended = attendance(store, account.id);
+    const thisWeek = attendance(store, account.id, weekIndex());
+    const hosted = Object.values(store.data.events || {}).filter((event) => store.linkedRoblox(event.host)?.id === String(account.id)).length;
+    const discordId = store.discordFor(account.id);
+    const headshot = await roblox.headshotUrl(account.id).catch(() => null);
     const embed = new EmbedBuilder()
-      .setTitle(`${account.name}'s service record`)
       .setColor(CONFIG.brandColor)
+      .setAuthor({ name: `${CONFIG.brandName} · Service Record` })
+      .setTitle(account.name)
+      .setURL(`https://www.roblox.com/users/${account.id}/profile`)
+      .setDescription(discordId ? `<@${discordId}>  ·  verified` : 'No linked Discord account')
       .addFields(
-        { name: 'Ranks', value: ranks.join('\n') || 'Not in any UNSC group' },
-        { name: 'Merit', value: `${total}${economy.pendingMerit ? ` (${economy.pendingMerit} on the way)` : ''}`, inline: true },
-        { name: 'Credits', value: `${economy.credits + economy.pendingCredits} cR${economy.pendingCredits ? ` (${economy.pendingCredits} on the way)` : ''}`, inline: true },
-        { name: 'Next rank', value: next || 'No merit promotion waiting in their groups.' }
+        { name: '🎖️ Ranks', value: ranks.join('\n') || 'Not in any UNSC group' },
+        { name: '⭐ Merit', value: `**${total.toLocaleString()}**${economy.pendingMerit ? `\n-# ${economy.pendingMerit} on the way` : ''}`, inline: true },
+        { name: '💳 Credits', value: `**${(economy.credits + economy.pendingCredits).toLocaleString()} cR**${economy.pendingCredits ? `\n-# ${economy.pendingCredits} on the way` : ''}`, inline: true },
+        { name: '⏱️ Playtime', value: `**${formatPlaytime(stats.Playtime)}**`, inline: true },
+        { name: '🪖 Operations', value: `**${attended.operations}**`, inline: true },
+        { name: '📅 Events attended', value: `**${attended.events}**${thisWeek.events ? `\n-# ${thisWeek.events} this week` : ''}`, inline: true },
+        { name: '📣 Events hosted', value: `**${hosted}**`, inline: true },
+        { name: '🎯 Kills', value: `**${kills.toLocaleString()}**${stats.VehicleKills ? `\n-# ${stats.VehicleKills} vehicles` : ''}`, inline: true },
+        { name: '💀 Deaths', value: `**${deaths.toLocaleString()}**`, inline: true },
+        { name: '⚖️ K/D', value: `**${deaths ? (kills / deaths).toFixed(2) : kills ? kills.toFixed(2) : '0.00'}**`, inline: true },
+        { name: '📈 Next promotion', value: next || 'No merit promotion waiting in their groups.' }
       );
+    if (headshot) embed.setThumbnail(headshot);
     if (!economy.found) embed.setFooter({ text: 'No game save yet. It is made the first time they join the game.' });
     await interaction.editReply({ embeds: [embed] });
   }
@@ -268,5 +297,5 @@ export function createEvents({ client, store, roblox, ranking }) {
     for (const [id, plan] of pending) if (plan.expires < Date.now()) pending.delete(id);
   }, 60_000).unref();
 
-  return { command, button, profile, grant };
+  return { command, preview, button, profile, grant, hooks };
 }
