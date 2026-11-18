@@ -133,7 +133,9 @@ export const CONFIG = Object.freeze({
 
   events: Object.freeze({
     hostCooldownHours: num('HOST_COOLDOWN_HOURS', 3),
-    autoPromote: bool('AUTO_PROMOTE', true)
+    autoPromote: bool('AUTO_PROMOTE', true),
+    // Must match MinAttendancePercent in the game's Events config.
+    gameAttendancePercent: num('GAME_ATTENDANCE_PERCENT', 70)
   })
 });
 

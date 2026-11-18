@@ -77,6 +77,12 @@ Trebuchet Frame keeps an inbox per player in the `TrebuchetEconomyV1` data store
 - `/schedule` (event hosts) posts an event card with Attending, Maybe and Can't buttons. 30 minutes before the start it pings the event notification role and everyone attending. The host presses **Log attendance** to open the pay preview with attending members' linked Roblox names filled in. `/events` lists what is coming up.
 - The server status card in `CHANNEL_SERVER_STATUS` updates every minute from the game's `TrebuchetStatus` data store (written by StatusService) and the public game numbers.
 
+## In-game events
+
+Hosts start events from the in-game Events panel (top bar, or the panel command). The game tracks who is in the server and who dies. When the event ends (time runs out, the host ends it, or the server closes), the game writes a report to the data store `TrebuchetEvents` (key `reports`). Within a minute the bot sends the host a report card in their DMs (or the event log channel if they have no linked Discord account or closed DMs). The host presses Objective completed or Objective failed, checks the pay preview, and presses Confirm. Nothing is paid until then, and a report can only be paid once. Attendees must be in the server for 70% of the event. In-game events done at about the same time as a scheduled event by the same host are linked to it.
+
+Who can host in game: Full Access, the Marine Corps command ranks, or division rank 7 and up (rank 8 for Operations). Change this in the game's `Config/_Events`.
+
 ## Setup on Railway
 
 The Roblox API key also needs **ordered-data-stores: read** on the game (universe) for the leaderboards.

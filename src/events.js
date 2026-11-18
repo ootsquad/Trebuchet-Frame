@@ -47,7 +47,7 @@ const lines = (rows, max = 3900) => {
 
 export function createEvents({ client, store, roblox, ranking }) {
   const pending = new Map();
-  const hooks = { logged: null };
+  const hooks = { logged: null, reported: null };
 
   function enabled() {
     return Boolean(CONFIG.roblox.apiKey && CONFIG.roblox.universeId && CONFIG.channels.eventLogs);
@@ -75,7 +75,7 @@ export function createEvents({ client, store, roblox, ranking }) {
 
   // Works out everyone's pay and returns the preview card with Confirm and Cancel. Used by /event and by the
   // Log attendance button on scheduled events. scheduleId ties the log back to the scheduled event.
-  async function preview({ hostDiscordId, type, objective, attendees, fallen: fallenText = '', notes = '', scheduleId = null }) {
+  async function preview({ hostDiscordId, type, objective, attendees, fallen: fallenText = '', notes = '', scheduleId = null, reportId = null, confirmerId = null, hostAccount = null }) {
     const attendeeNames = parseNames(attendees);
     const fallenNames = parseNames(fallenText);
     const names = parseNames([...attendeeNames, ...fallenNames].join(' '));
@@ -97,14 +97,14 @@ export function createEvents({ client, store, roblox, ranking }) {
       return { account, ...pay };
     });
 
-    const hostLink = store.linkedRoblox(hostDiscordId);
+    const hostLink = hostAccount || store.linkedRoblox(hostDiscordId);
     const cooldownMs = CONFIG.events.hostCooldownHours * 3600_000;
     const onCooldown = Date.now() - store.lastHostPay(hostDiscordId, type) < cooldownMs;
     const host = hostPay(rows.length, { onCooldown });
     if (!hostLink && host.credits > 0) host.reason = 'link your Roblox account with /link to get host pay';
 
     const id = crypto.randomBytes(4).toString('hex');
-    pending.set(id, { id, type, objective, notes, rows, host, hostLink, hostId: hostDiscordId, today, scheduleId, expires: Date.now() + PREVIEW_MINUTES * 60_000 });
+    pending.set(id, { id, type, objective, notes, rows, host, hostLink, hostId: hostDiscordId, today, scheduleId, reportId, confirmerId, expires: Date.now() + PREVIEW_MINUTES * 60_000 });
 
     const event = EVENT_TYPES[type];
     const totalCredits = rows.reduce((sum, row) => sum + row.credits, 0) + (hostLink && !host.reason ? host.credits : 0);
@@ -133,18 +133,23 @@ export function createEvents({ client, store, roblox, ranking }) {
     const plan = pending.get(id);
     if (!plan || plan.expires < Date.now()) {
       pending.delete(id);
-      await interaction.update({ content: 'This preview ran out. Run /event again.', embeds: [], components: [] });
+      await interaction.update({ content: 'This preview ran out. Make a new one (press Objective completed or failed on the report again, or run /event).', embeds: [], components: [] });
       return;
     }
-    if (plan.hostId !== interaction.user.id) {
+    if (plan.hostId !== interaction.user.id && plan.confirmerId !== interaction.user.id) {
       await interaction.reply({ content: 'Only the host who made this preview can confirm it.', flags: MessageFlags.Ephemeral });
+      return;
+    }
+    if (plan.reportId && store.data.gameReports?.[plan.reportId]?.status === 'paid') {
+      pending.delete(id);
+      await interaction.update({ content: 'This in-game event was already paid.', embeds: [], components: [] });
       return;
     }
     pending.delete(id);
     await interaction.update({ content: 'Paying out...', components: [] });
 
     const event = EVENT_TYPES[plan.type];
-    const key = `devent:${id}`;
+    const key = plan.reportId ? `gevent:${plan.reportId}` : `devent:${id}`;
     const paid = [];
     const failed = [];
     for (const row of plan.rows) {
@@ -170,11 +175,13 @@ export function createEvents({ client, store, roblox, ranking }) {
     store.recordEvent(id, {
       type: plan.type,
       scheduleId: plan.scheduleId || null,
+      reportId: plan.reportId || null,
       host: plan.hostId,
       objective: plan.objective,
       at: new Date().toISOString(),
       attendees: paid.map((row) => ({ id: row.account.id, name: row.account.name, merit: row.merit, credits: row.credits }))
     });
+    if (plan.reportId && hooks.reported) await hooks.reported(plan.reportId, id).catch((error) => console.error('[Game report]', error));
     if (plan.scheduleId && hooks.logged) await hooks.logged(plan.scheduleId, id).catch((error) => console.error('[Schedule log]', error));
 
     const promotions = [];
@@ -197,7 +204,7 @@ export function createEvents({ client, store, roblox, ranking }) {
       .setColor(failed.length ? 0xed4245 : 0x57f287)
       .setDescription(lines(paid.map((row) => `${row.account.name}: +${row.merit} merit, +${row.credits} cR`)))
       .addFields(
-        { name: 'Host', value: `<@${plan.hostId}>`, inline: true },
+        { name: 'Host', value: String(plan.hostId).startsWith('roblox:') ? plan.hostLink?.name || 'Unknown' : `<@${plan.hostId}>`, inline: true },
         { name: 'Objective completed', value: plan.objective ? 'Yes' : 'No', inline: true },
         { name: 'Host pay', value: hostLine }
       )

@@ -17,6 +17,7 @@ import { createRankPanel } from './panel.js';
 import { createSchedule } from './schedule.js';
 import { createLeaderboards } from './leaderboards.js';
 import { createStatus } from './status.js';
+import { createGameEvents } from './gameEvents.js';
 
 validateConfig();
 for (const problem of featureProblems()) console.warn(`[Setup] ${problem}`);
@@ -47,6 +48,8 @@ const applications = createApplicationService({ client, roblox, store, ranking, 
 const panel = createRankPanel({ client, store, roblox, access, ranking });
 const schedule = createSchedule({ client, store, events });
 events.hooks.logged = schedule.markLogged;
+const gameEvents = createGameEvents({ client, store, roblox, events });
+events.hooks.reported = gameEvents.reported;
 const leaderboards = createLeaderboards({ client, store, roblox });
 const status = createStatus({ client, roblox, store });
 
@@ -62,6 +65,7 @@ client.once(Events.ClientReady, async (ready) => {
   schedule.start();
   leaderboards.start();
   status.start();
+  gameEvents.start();
   await panel.post().catch((error) => console.error('[Rank panel]', error));
   // Blacklisted groups gain members over time: ban their linked accounts every sync period.
   setInterval(() => blacklist.enforce().catch((error) => console.error('[Blacklist]', error)), CONFIG.sync.everyMinutes * 60_000).unref();
@@ -97,6 +101,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (await ranking.button(interaction)) return;
     if (await events.button(interaction)) return;
     if (await schedule.button(interaction)) return;
+    if (await gameEvents.button(interaction)) return;
     if (await handleLinkButton(interaction, { store, blacklist })) return;
     if (await panel.handle(interaction)) return;
     if (await announcements.submit(interaction)) return;
