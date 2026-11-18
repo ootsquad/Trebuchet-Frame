@@ -35,7 +35,7 @@ export const CONFIG = Object.freeze({
     promotions: env('CHANNEL_PROMOTIONS'),
     rankLogs: env('CHANNEL_RANK_LOGS'),
     leaderboards: env('CHANNEL_LEADERBOARDS'),
-    schedule: env('CHANNEL_EVENT_SCHEDULE') || env('CHANNEL_ANNOUNCEMENTS'),
+    schedule: env('CHANNEL_EVENT_SCHEDULE', '1572520800052060160'),
     status: env('CHANNEL_SERVER_STATUS', '1572511237370155048'),
     errors: env('CHANNEL_ERRORS')
   }),

@@ -6,8 +6,7 @@ import { CONFIG } from './config.js';
 import { formatPlaytime, weekIndex, weekStart, weeklyAttendance } from './stats.js';
 import { COLORS } from './ui.js';
 
-const MEDALS = ['🥇', '🥈', '🥉'];
-const place = (index) => MEDALS[index] || `\`${String(index + 1).padStart(2, ' ')}.\``;
+const place = (index) => `\`${String(index + 1).padStart(2, ' ')}\``;
 
 export function createLeaderboards({ client, store, roblox }) {
   store.data.leaderboardPosted ??= null;
@@ -34,12 +33,12 @@ export function createLeaderboards({ client, store, roblox }) {
       .setAuthor({ name: `${CONFIG.brandName} · Weekly Leaderboard` })
       .setTitle(`Week of ${day(start)} – ${day(end)}`)
       .addFields(
-        { name: '⭐ Merit earned', value: list(merit, (entry) => `${entry.value.toLocaleString()} merit`), inline: true },
-        { name: '⏱️ Time played', value: list(playtime, (entry) => formatPlaytime(entry.value * 60)), inline: true },
+        { name: 'Merit earned', value: list(merit, (entry) => `${entry.value.toLocaleString()} merit`), inline: true },
+        { name: 'Time played', value: list(playtime, (entry) => formatPlaytime(entry.value * 60)), inline: true },
         { name: '​', value: '​', inline: false },
-        { name: '🎯 Kills', value: list(kills, (entry) => `${entry.value.toLocaleString()} kills`), inline: true },
-        { name: '📅 Events attended', value: list(events, (entry) => `${entry.events} event${entry.events === 1 ? '' : 's'}`), inline: true },
-        { name: '🪖 Operations', value: list(operations, (entry) => `${entry.operations} op${entry.operations === 1 ? '' : 's'}`), inline: true }
+        { name: 'Kills', value: list(kills, (entry) => `${entry.value.toLocaleString()} kills`), inline: true },
+        { name: 'Events attended', value: list(events, (entry) => `${entry.events} event${entry.events === 1 ? '' : 's'}`), inline: true },
+        { name: 'Operations', value: list(operations, (entry) => `${entry.operations} op${entry.operations === 1 ? '' : 's'}`), inline: true }
       )
       .setFooter({ text: 'Weeks run Monday to Sunday (UTC). Game numbers update every couple of minutes.' })
       .setTimestamp();

@@ -16,6 +16,21 @@ import { attendance, formatPlaytime, weekIndex } from './stats.js';
 
 const PREVIEW_MINUTES = 15;
 
+// Ranks on /profile, sorted into Command, Divisions and Departments. Groups they are not in are left out.
+const SECTIONS = [
+  { name: 'Command', kinds: ['unsc', 'marines', 'navy'] },
+  { name: 'Divisions', kinds: ['division'] },
+  { name: 'Departments', kinds: ['project', 'materials', 'vehicles'] }
+];
+export function rankSections(groupRanks) {
+  return SECTIONS.map((section) => {
+    const rows = GROUPS.map((group, index) => ({ group, rank: groupRanks[index] }))
+      .filter(({ group, rank }) => rank && section.kinds.includes(group.kind))
+      .map(({ group, rank }) => `**${/^[\s\-_=.]*$/.test(rank) ? 'Member' : rank}**\n-# ${group.short}`);
+    return rows.length ? { name: section.name, value: rows.join('\n').slice(0, 1024), inline: true } : null;
+  }).filter(Boolean);
+}
+
 export function canHost(member) {
   if (member?.permissions?.has('ManageGuild')) return true;
   return Boolean(CONFIG.roles.eventHost && member?.roles?.cache?.has(CONFIG.roles.eventHost));
@@ -229,35 +244,47 @@ export function createEvents({ client, store, roblox, ranking }) {
       ...GROUPS.map((group) => roblox.getRank(group.groupId, account.id).catch(() => null))
     ]);
     const total = economy.merit + economy.pendingMerit;
-    const ranks = GROUPS.map((group, index) => groupRanks[index] && `**${group.short}:** ${groupRanks[index]}`).filter(Boolean);
+    const rankFields = rankSections(groupRanks);
     const steps = await ranking.nextSteps(account, total);
     const next = steps.length ? steps.join('\n') : null;
     const stats = economy.stats || {};
-    const kills = (Number(stats.Kills) || 0) + (Number(stats.VehicleKills) || 0);
+    const vehicleKills = Number(stats.VehicleKills) || 0;
+    const kills = (Number(stats.Kills) || 0) + vehicleKills;
     const deaths = Number(stats.Deaths) || 0;
     const attended = attendance(store, account.id);
     const thisWeek = attendance(store, account.id, weekIndex());
     const hosted = Object.values(store.data.events || {}).filter((event) => store.linkedRoblox(event.host)?.id === String(account.id)).length;
     const discordId = store.discordFor(account.id);
     const headshot = await roblox.headshotUrl(account.id).catch(() => null);
+    const line = (label, value) => `${label}  **${value}**`;
     const embed = new EmbedBuilder()
       .setColor(CONFIG.brandColor)
       .setAuthor({ name: `${CONFIG.brandName} · Service Record` })
       .setTitle(account.name)
       .setURL(`https://www.roblox.com/users/${account.id}/profile`)
-      .setDescription(discordId ? `<@${discordId}>  ·  verified` : 'No linked Discord account')
+      .setDescription(discordId ? `<@${discordId}>  ·  Verified` : 'No linked Discord account')
       .addFields(
-        { name: '🎖️ Ranks', value: ranks.join('\n') || 'Not in any UNSC group' },
-        { name: '⭐ Merit', value: `**${total.toLocaleString()}**${economy.pendingMerit ? `\n-# ${economy.pendingMerit} on the way` : ''}`, inline: true },
-        { name: '💳 Credits', value: `**${(economy.credits + economy.pendingCredits).toLocaleString()} cR**${economy.pendingCredits ? `\n-# ${economy.pendingCredits} on the way` : ''}`, inline: true },
-        { name: '⏱️ Playtime', value: `**${formatPlaytime(stats.Playtime)}**`, inline: true },
-        { name: '🪖 Operations', value: `**${attended.operations}**`, inline: true },
-        { name: '📅 Events attended', value: `**${attended.events}**${thisWeek.events ? `\n-# ${thisWeek.events} this week` : ''}`, inline: true },
-        { name: '📣 Events hosted', value: `**${hosted}**`, inline: true },
-        { name: '🎯 Kills', value: `**${kills.toLocaleString()}**${stats.VehicleKills ? `\n-# ${stats.VehicleKills} vehicles` : ''}`, inline: true },
-        { name: '💀 Deaths', value: `**${deaths.toLocaleString()}**`, inline: true },
-        { name: '⚖️ K/D', value: `**${deaths ? (kills / deaths).toFixed(2) : kills ? kills.toFixed(2) : '0.00'}**`, inline: true },
-        { name: '📈 Next promotion', value: next || 'No merit promotion waiting in their groups.' }
+        ...(rankFields.length ? rankFields : [{ name: 'Ranks', value: 'Not in any UNSC group' }]),
+        { name: '​', value: '**Service**', inline: false },
+        { name: 'Progress', value: [
+          line('Merit', total.toLocaleString()),
+          line('Credits', `${(economy.credits + economy.pendingCredits).toLocaleString()} cR`),
+          line('Playtime', formatPlaytime(stats.Playtime)),
+          ...(economy.pendingMerit || economy.pendingCredits ? [`-# On the way: ${economy.pendingMerit} merit, ${economy.pendingCredits} cR`] : [])
+        ].join('\n'), inline: true },
+        { name: 'Activity', value: [
+          line('Operations', attended.operations),
+          line('Events', attended.events),
+          line('Hosted', hosted),
+          ...(thisWeek.events ? [`-# ${thisWeek.events} this week`] : [])
+        ].join('\n'), inline: true },
+        { name: 'Combat', value: [
+          line('Kills', kills.toLocaleString()),
+          line('Deaths', deaths.toLocaleString()),
+          line('K/D', deaths ? (kills / deaths).toFixed(2) : kills.toFixed(2)),
+          ...(vehicleKills ? [`-# ${vehicleKills} vehicle kill${vehicleKills === 1 ? '' : 's'}`] : [])
+        ].join('\n'), inline: true },
+        { name: 'Next promotion', value: next || 'No merit promotion waiting.' }
       );
     if (headshot) embed.setThumbnail(headshot);
     if (!economy.found) embed.setFooter({ text: 'No game save yet. It is made the first time they join the game.' });

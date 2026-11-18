@@ -71,31 +71,36 @@ export function createSchedule({ client, store, events }) {
     const type = EVENT_TYPES[entry.type];
     const unix = Math.floor(entry.at / 1000);
     const people = (answer) => Object.entries(entry.answers || {}).filter(([, value]) => value === answer).map(([id]) => `<@${id}>`);
-    const list = (ids) => (ids.length ? ids.slice(0, 40).join(' ') + (ids.length > 40 ? ` +${ids.length - 40}` : '') : '-# Nobody yet');
-    const status = entry.cancelled ? '❌ Cancelled' : entry.logged ? '✅ Logged' : Date.now() > entry.at ? '🟢 Started' : `Starts <t:${unix}:R>`;
+    const list = (ids) => (ids.length ? ids.slice(0, 40).join('\n') + (ids.length > 40 ? `\n+${ids.length - 40} more` : '') : '-# None');
+    const status = entry.cancelled ? 'Cancelled' : entry.logged ? 'Logged' : Date.now() > entry.at ? 'In progress' : 'Upcoming';
+    const [yes, maybe, no] = [people('yes'), people('maybe'), people('no')];
     const embed = new EmbedBuilder()
-      .setColor(entry.cancelled ? 0x4f545c : entry.logged ? 0x57f287 : CONFIG.brandColor)
-      .setAuthor({ name: `${CONFIG.brandName} · Scheduled Event` })
-      .setTitle(`📅  ${entry.title || type?.name || 'Event'}`)
-      .setDescription(entry.description || null)
+      .setColor(entry.cancelled ? 0x4f545c : entry.logged ? 0x3ba55d : CONFIG.brandColor)
+      .setAuthor({ name: `${CONFIG.brandName} · ${status} Event` })
+      .setTitle(entry.title || type?.name || 'Event')
+      .setDescription([
+        `**<t:${unix}:F>**`,
+        entry.cancelled || entry.logged ? null : `-# Starts <t:${unix}:R>`,
+        entry.description ? `\n${entry.description}` : null
+      ].filter(Boolean).join('\n'))
       .addFields(
-        { name: 'When', value: `<t:${unix}:F>\n${status}`, inline: true },
         { name: 'Type', value: type?.name || entry.type, inline: true },
         { name: 'Host', value: `<@${entry.host}>`, inline: true },
-        { name: `✅ Attending (${people('yes').length})`, value: list(people('yes')) },
-        { name: `❔ Maybe (${people('maybe').length})`, value: list(people('maybe')), inline: true },
-        { name: `❌ Can't (${people('no').length})`, value: String(people('no').length), inline: true }
+        { name: 'Status', value: status, inline: true },
+        { name: `Attending (${yes.length})`, value: list(yes), inline: true },
+        { name: `Maybe (${maybe.length})`, value: list(maybe), inline: true },
+        { name: `Can't (${no.length})`, value: list(no), inline: true }
       )
-      .setFooter({ text: `Times show in your own time zone. Event ${entry.id}` });
+      .setFooter({ text: `Times show in your own time zone · Event ${entry.id}` });
     const open = !entry.cancelled && !entry.logged;
     const rows = [new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`sched:yes:${entry.id}`).setLabel('Attending').setEmoji('✅').setStyle(ButtonStyle.Success).setDisabled(!open),
-      new ButtonBuilder().setCustomId(`sched:maybe:${entry.id}`).setLabel('Maybe').setEmoji('❔').setStyle(ButtonStyle.Secondary).setDisabled(!open),
-      new ButtonBuilder().setCustomId(`sched:no:${entry.id}`).setLabel("Can't").setEmoji('❌').setStyle(ButtonStyle.Secondary).setDisabled(!open)
+      new ButtonBuilder().setCustomId(`sched:yes:${entry.id}`).setLabel('Attending').setStyle(ButtonStyle.Success).setDisabled(!open),
+      new ButtonBuilder().setCustomId(`sched:maybe:${entry.id}`).setLabel('Maybe').setStyle(ButtonStyle.Secondary).setDisabled(!open),
+      new ButtonBuilder().setCustomId(`sched:no:${entry.id}`).setLabel("Can't").setStyle(ButtonStyle.Secondary).setDisabled(!open)
     )];
     if (open) {
       rows.push(new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`sched:log:${entry.id}`).setLabel('Log attendance').setEmoji('📝').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId(`sched:log:${entry.id}`).setLabel('Log attendance').setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId(`sched:cancel:${entry.id}`).setLabel('Cancel event').setStyle(ButtonStyle.Danger)
       ));
     }

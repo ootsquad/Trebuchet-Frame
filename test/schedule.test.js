@@ -26,3 +26,13 @@ test('weeks start on Monday UTC like the game', () => {
   assert.equal(formatPlaytime(3 * 3600 + 5 * 60), '3h 5m');
 });
 
+
+test('profile ranks are sorted into sections', async () => {
+  const { rankSections } = await import('../src/events.js');
+  const { GROUPS } = await import('../src/groups.js');
+  const ranks = GROUPS.map((group) => ({ unsc: '-------------', marines: 'Secretary General', odst: 'Sergeant', project: 'Head Developer' })[group.key] || null);
+  const sections = rankSections(ranks);
+  assert.deepEqual(sections.map((section) => section.name), ['Command', 'Divisions', 'Departments']);
+  assert.match(sections[0].value, /^\*\*Member\*\*\n-# United Nations Space Command/);
+  assert.match(sections[1].value, /Sergeant/);
+});
