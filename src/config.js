@@ -16,6 +16,8 @@ const bool = (name, fallback) => {
 export const CONFIG = Object.freeze({
   discordToken: env('DISCORD_TOKEN'),
   guildId: env('DISCORD_GUILD_ID'),
+  // The development server: leaks are posted there, important suggestions go there.
+  devGuildId: env('DISCORD_DEV_GUILD_ID'),
   port: num('PORT', 3000),
   dataDir: path.resolve(env('DATA_DIR', './data')),
   timeZone: env('TIME_ZONE', 'America/New_York'),
@@ -42,7 +44,8 @@ export const CONFIG = Object.freeze({
     eventHost: env('ROLE_EVENT_HOST'),
     announcer: env('ROLE_ANNOUNCER'),
     leaker: env('ROLE_LEAKER'),
-    economyAdmin: env('ROLE_ECONOMY_ADMIN')
+    economyAdmin: env('ROLE_ECONOMY_ADMIN'),
+    eventNotifications: env('ROLE_EVENT_NOTIFICATIONS')
   }),
 
   suggestions: Object.freeze({

@@ -52,10 +52,11 @@ client.on(Events.GuildMemberAdd, async (member) => {
 });
 
 client.on(Events.MessageCreate, async (message) => {
-  if (!message.guild || message.guild.id !== CONFIG.guildId) return;
+  if (!message.guild) return;
   try {
-    if (await suggestions.onMessage(message)) return;
-    await leaks.onMessage(message);
+    // Leaks come from the development server; suggestions from the main one.
+    if (message.guild.id === CONFIG.guildId && (await suggestions.onMessage(message))) return;
+    if (message.guild.id === CONFIG.guildId || message.guild.id === CONFIG.devGuildId) await leaks.onMessage(message);
   } catch (error) {
     console.error(`[Message ${message.id}]`, error);
   }

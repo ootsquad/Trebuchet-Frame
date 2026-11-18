@@ -86,8 +86,9 @@ export function createAnnouncements({ client }) {
       await interaction.reply({ content: `Updated: ${message.url}`, flags: MessageFlags.Ephemeral });
       return true;
     }
-    const content = ping === 'everyone' ? '@everyone' : ping === 'here' ? '@here' : ping === 'role' && roleId !== '0' ? `<@&${roleId}>` : undefined;
-    const allowedMentions = ping === 'everyone' || ping === 'here' ? { parse: ['everyone'] } : ping === 'role' ? { roles: [roleId] } : { parse: [] };
+    const pingRole = ping === 'events' ? CONFIG.roles.eventNotifications : ping === 'role' && roleId !== '0' ? roleId : '';
+    const content = ping === 'everyone' ? '@everyone' : ping === 'here' ? '@here' : pingRole ? `<@&${pingRole}>` : undefined;
+    const allowedMentions = ping === 'everyone' || ping === 'here' ? { parse: ['everyone'] } : pingRole ? { roles: [pingRole] } : { parse: [] };
     const message = await channel.send({ content, embeds: [embed], allowedMentions });
     await interaction.reply({ content: `Posted: ${message.url}`, flags: MessageFlags.Ephemeral });
     return true;

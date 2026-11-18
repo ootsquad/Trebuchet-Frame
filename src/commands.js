@@ -29,6 +29,7 @@ export const commandData = [
       { name: 'Nobody', value: 'none' },
       { name: '@here', value: 'here' },
       { name: '@everyone', value: 'everyone' },
+      { name: 'Event notifications role', value: 'events' },
       { name: 'A role', value: 'role' }
     ))
     .addRoleOption((o) => o.setName('role').setDescription('The role to ping, if ping is A role'))
