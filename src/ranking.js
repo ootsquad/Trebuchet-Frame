@@ -1,10 +1,10 @@
 // Ranking through Discord, scoped by Roblox rank:
 //   /rank      change someone's rank in a group you manage (you only see that group's ranks below yours)
 //   /pending   see who asked to join a group you manage, and accept or decline them
-//   /ladder    set the merit ladder for a group you manage
-// Merit promotions: every MERIT_PER_RANK merit earned since the last promotion moves someone one step up their
-// group's ladder. The ladder's approval rank (the top NCO rank) is never automatic: the group's commanders get a
-// request to approve or deny. Every change is logged with who made it and in which group.
+// Merit promotions (divisions): every MERIT_PER_RANK merit earned since the last promotion moves someone one rank
+// up, as far as the division's earnable rank (rank 6: Sergeant Major, or ODST Fireteam | Alpha). ODST's Fireteam
+// Leader (rank 7) can be earned too, but only when the Commanding or Executive Officer approves. Giving anything
+// above the earnable rank by hand pings them. Every change is logged with who made it and in which group.
 import {
   ActionRowBuilder,
   ButtonBuilder,
@@ -19,7 +19,6 @@ import { COLORS, note } from './ui.js';
 const same = (a, b) => String(a || '').toLowerCase() === String(b || '').toLowerCase();
 
 export function createRanking({ client, store, roblox, access }) {
-  store.data.ladders ??= {};
   store.data.meritBase ??= {};
   store.data.promotionRequests ??= {};
 
@@ -61,12 +60,49 @@ export function createRanking({ client, store, roblox, access }) {
     const ids = [];
     for (const [discordId, link] of Object.entries(store.data.links)) {
       const rank = members.get(String(link.id));
-      if (rank && isManagerRank(group, rank)) ids.push(discordId);
+      if (rank && /commanding officer|executive officer/i.test(rank)) ids.push(discordId);
     }
     return ids;
   }
 
   // ---------- /rank ----------
+
+  // fixedGroup: /license always works on the vehicle certification group.
+  // Checks a target before ranking: in the group, and below the manager. Returns their current role.
+  async function checkTarget(group, role, actor, target) {
+    if (target.id === actor.id) throw new Error('You cannot change your own rank.');
+    const current = (await roblox.getRoles(group.groupId, target.id))[0];
+    if (!current) throw new Error(`${target.name} is not in ${group.short}. Check their join request first.`);
+    if (current.rank >= role.rank) throw new Error(`${target.name} is ${current.name}, which is not below your rank. You cannot change them.`);
+    return current;
+  }
+
+  // The one place ranks change by hand (/rank, /license and the rank panel).
+  async function changeRank({ discordUserId, groupKey, target, rankName, reason = null }) {
+    const { actor, group, role } = await access.requireManager(discordUserId, groupKey);
+    const current = await checkTarget(group, role, actor, target);
+    const allowed = await access.assignableRanks(group, role);
+    const rank = allowed.find((entry) => same(entry.name, rankName));
+    if (!rank) throw new Error(`"${rankName}" is not a rank you can give in ${group.short}.`);
+
+    // Above the earnable rank, the division's Commanding and Executive Officers are told.
+    const needsCommand = Boolean(group.earnable) && rank.rank > group.earnable;
+    const result = await roblox.setRank(group.groupId, target.id, rank.name);
+    access.forget(group, target.id);
+    const ping = needsCommand ? (await commandersOf(group)).filter((id) => id !== discordUserId) : [];
+    await logChange({
+      group, target, from: result.before, to: result.rank, by: `<@${discordUserId}> (${actor.name}, ${role.name})`,
+      reason: needsCommand ? `${reason ? `${reason}\n` : ''}⚠️ ${rank.name} is above the ranks earned by merit. Commanding and Executive Officers notified.` : reason,
+      color: needsCommand ? COLORS.warn : COLORS.info,
+      promotion: rank.rank > current.rank,
+      ping
+    });
+    store.data.meritBase[`${group.key}:${target.id}`] = null; // the next merit step counts from their next check
+    store.save();
+    return { group, before: result.before, after: result.rank, needsCommand };
+  }
+
+  const changedNote = (target, result) => note(`✅ **${target.name}** in ${result.group.short}: ${result.before} → **${result.after}**${result.needsCommand ? '\nThe Commanding and Executive Officers were notified, because this rank is above what merit earns.' : ''}`, COLORS.good);
 
   // fixedGroup: /license always works on the vehicle certification group.
   async function rankCommand(interaction, fixedGroup = null) {
@@ -76,36 +112,9 @@ export function createRanking({ client, store, roblox, access }) {
     const [pickedGroup, pickedRank] = picked.includes('::') ? picked.split('::') : [null, picked];
     const groupKey = fixedGroup || interaction.options.getString('group') || pickedGroup;
     if (!groupKey) throw new Error('Pick the rank from the list, or choose a group first.');
-    const { actor, group, role } = await access.requireManager(interaction.user.id, groupKey);
     const target = await roblox.resolveUser(interaction.options.getString('roblox_user', true));
-    if (target.id === actor.id) throw new Error('You cannot change your own rank.');
-    const current = (await roblox.getRoles(group.groupId, target.id))[0];
-    if (!current) throw new Error(`${target.name} is not in ${group.short}. Check /pending if they asked to join.`);
-    if (current.rank >= role.rank) throw new Error(`${target.name} is ${current.name}, which is not below your rank. You cannot change them.`);
-    const wanted = pickedRank;
-    const allowed = await access.assignableRanks(group, role);
-    const rank = allowed.find((entry) => same(entry.name, wanted));
-    if (!rank) throw new Error(`"${wanted}" is not a rank you can give in ${group.short}. Pick one from the list.`);
-
-    // The top NCO rank and above need the commanders, unless a commander is the one doing it.
-    const ladder = store.data.ladders[group.key];
-    const approval = ladder?.approval ? allowed.find((entry) => same(entry.name, ladder.approval)) || null : null;
-    const needsCommand = approval && rank.rank >= approval.rank && !/commanding officer/i.test(role.name);
-
-    const result = await roblox.setRank(group.groupId, target.id, rank.name);
-    access.forget(group, target.id);
-    const reason = interaction.options.getString('reason') || null;
-    const ping = needsCommand ? (await commandersOf(group)).filter((id) => id !== interaction.user.id) : [];
-    await logChange({
-      group, target, from: result.before, to: result.rank, by: `<@${interaction.user.id}> (${actor.name}, ${role.name})`,
-      reason: needsCommand ? `${reason ? `${reason}\n` : ''}⚠️ ${rank.name} is at or above ${ladder.approval}. Commanders notified.` : reason,
-      color: needsCommand ? COLORS.warn : COLORS.info,
-      promotion: rank.rank > current.rank,
-      ping
-    });
-    store.data.meritBase[`${group.key}:${target.id}`] = null; // next merit step counts from their next check
-    store.save();
-    await interaction.editReply({ embeds: [note(`✅ **${target.name}** in ${group.short}: ${result.before} → **${result.rank}**${needsCommand ? '\nThe commanders were notified, because this is at or above the approval rank.' : ''}`, COLORS.good)] });
+    const result = await changeRank({ discordUserId: interaction.user.id, groupKey, target, rankName: pickedRank, reason: interaction.options.getString('reason') });
+    await interaction.editReply({ embeds: [changedNote(target, result)] });
   }
 
   // Autocomplete: only groups you manage, and only that group's ranks below yours.
@@ -206,51 +215,25 @@ export function createRanking({ client, store, roblox, access }) {
     await interaction.editReply(await pendingView(group));
   }
 
-  // ---------- /ladder ----------
-
-  async function ladderCommand(interaction) {
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    const { group, role } = await access.requireManager(interaction.user.id, interaction.options.getString('group', true));
-    const text = interaction.options.getString('ranks');
-    if (!text) {
-      const ladder = store.data.ladders[group.key];
-      await interaction.editReply({ embeds: [new EmbedBuilder()
-        .setColor(COLORS.info)
-        .setAuthor({ name: `${group.short} · Merit ladder` })
-        .setDescription(ladder?.ranks?.length
-          ? ladder.ranks.map((name, index) => `${index + 1}. ${name}${same(name, ladder.approval) ? '  ·  needs commander approval' : ''}`).join('\n')
-          : 'No ladder yet, so nobody in this group is promoted by merit. Set one with `/ladder ranks:` like `Private > Lance Corporal > Corporal`.')
-        .setFooter({ text: `Each step takes ${CONFIG.ranking.meritPerRank} merit earned since the last promotion.` })] });
-      return;
-    }
-    const allowed = await access.assignableRanks(group, role);
-    const names = text.split('>').map((part) => part.trim()).filter(Boolean);
-    const ranks = [];
-    for (const name of names) {
-      const found = allowed.find((entry) => same(entry.name, name));
-      if (!found) throw new Error(`"${name}" is not a rank below yours in ${group.short}.`);
-      ranks.push(found.name);
-    }
-    if (ranks.length < 2) throw new Error('A ladder needs at least two ranks, lowest first, separated by >.');
-    const approvalInput = interaction.options.getString('approval_rank');
-    const approval = approvalInput ? ranks.find((name) => same(name, approvalInput)) : ranks[ranks.length - 1];
-    if (!approval) throw new Error('The approval rank must be one of the ladder ranks.');
-    store.data.ladders[group.key] = { ranks, approval, by: interaction.user.id, at: new Date().toISOString() };
-    store.save();
-    await interaction.editReply({ embeds: [note(`✅ ${group.short} ladder saved:\n${ranks.map((name) => (same(name, approval) ? `**${name}** (needs approval)` : name)).join(' → ')}`, COLORS.good)] });
-  }
-
   // ---------- merit promotions ----------
 
-  // Checks every group with a ladder that the account is in. Call after merit is paid.
+  // The division's ranks by number: [{ name, rank }] for ranks 1 and up, lowest first.
+  async function ranksByNumber(group) {
+    return (await roblox.listRoles(group.groupId))
+      .map((role) => ({ name: String(role.displayName || role.name || ''), rank: Number(role.rank) || 0 }))
+      .filter((role) => role.rank >= 1 && role.rank <= 10)
+      .sort((a, b) => a.rank - b.rank);
+  }
+
+  // Checks each division the account is in. Call after merit is paid.
   async function checkPromotions(account, merit) {
     const results = [];
     for (const group of GROUPS) {
-      const ladder = store.data.ladders[group.key];
-      if (!ladder?.ranks?.length) continue;
-      const current = await roblox.getRank(group.groupId, account.id).catch(() => null);
-      const index = ladder.ranks.findIndex((name) => same(name, current));
-      if (index < 0 || index >= ladder.ranks.length - 1) continue;
+      if (!group.earnable) continue;
+      const current = (await roblox.getRoles(group.groupId, account.id).catch(() => []))[0];
+      if (!current || current.rank < 1) continue;
+      const limit = group.approval || group.earnable;
+      if (current.rank >= limit) continue;
       const baseKey = `${group.key}:${account.id}`;
       if (typeof store.data.meritBase[baseKey] !== 'number') {
         store.data.meritBase[baseKey] = merit;
@@ -258,19 +241,36 @@ export function createRanking({ client, store, roblox, access }) {
         continue;
       }
       if (merit - store.data.meritBase[baseKey] < CONFIG.ranking.meritPerRank) continue;
-      const next = ladder.ranks[index + 1];
-      if (same(next, ladder.approval)) {
-        await requestApproval(group, account, current, next, merit);
-        results.push({ group, account, to: next, pending: true });
+      const next = (await ranksByNumber(group)).find((role) => role.rank > current.rank);
+      if (!next || next.rank > limit) continue;
+      if (next.rank > group.earnable) {
+        await requestApproval(group, account, current.name, next.name, merit);
+        results.push({ group, account, to: next.name, pending: true });
         continue;
       }
-      const result = await roblox.setRank(group.groupId, account.id, next);
+      const result = await roblox.setRank(group.groupId, account.id, next.name);
       store.data.meritBase[baseKey] = merit;
       store.save();
       await logChange({ group, target: account, from: result.before, to: result.rank, by: 'Merit', reason: `${merit} merit`, color: COLORS.good, promotion: true });
-      results.push({ group, account, to: next, pending: false });
+      results.push({ group, account, to: next.name, pending: false });
     }
     return results;
+  }
+
+  // For /profile: the next merit step in each division.
+  async function nextSteps(account, merit) {
+    const lines = [];
+    for (const group of GROUPS) {
+      if (!group.earnable) continue;
+      const current = (await roblox.getRoles(group.groupId, account.id).catch(() => []))[0];
+      if (!current || current.rank < 1 || current.rank >= (group.approval || group.earnable)) continue;
+      const next = (await ranksByNumber(group)).find((role) => role.rank > current.rank);
+      if (!next) continue;
+      const base = store.data.meritBase[`${group.key}:${account.id}`];
+      const earned = typeof base === 'number' ? merit - base : 0;
+      lines.push(`**${group.short}:** ${next.name} in ${Math.max(0, CONFIG.ranking.meritPerRank - earned)} merit${next.rank > group.earnable ? ' (needs approval)' : ''}`);
+    }
+    return lines;
   }
 
   async function requestApproval(group, account, from, to, merit) {
@@ -282,7 +282,7 @@ export function createRanking({ client, store, roblox, access }) {
       .setAuthor({ name: `${group.short} · Promotion needs approval` })
       .setTitle(account.name)
       .setURL(`https://www.roblox.com/users/${account.id}/profile`)
-      .setDescription(`Reached the merit for **${to}**, which needs a commander's approval.`)
+      .setDescription(`Reached the merit for **${to}**, which needs the Commanding or Executive Officer to approve.`)
       .addFields({ name: 'From', value: from, inline: true }, { name: 'To', value: to, inline: true }, { name: 'Merit', value: String(merit), inline: true })
       .setTimestamp();
     const row = new ActionRowBuilder().addComponents(
@@ -335,5 +335,5 @@ export function createRanking({ client, store, roblox, access }) {
     return false;
   }
 
-  return { rankCommand, autocomplete, pendingCommand, pendingAutocomplete, ladderCommand, checkPromotions, logChange, button };
+  return { rankCommand, changeRank, checkTarget, changedNote, autocomplete, pendingCommand, pendingAutocomplete, checkPromotions, nextSteps, logChange, button, canHandleRequests, pendingView, commandersOf };
 }

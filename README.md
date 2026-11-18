@@ -9,7 +9,9 @@ Discord bot for the UNSC community. It handles:
 - Leaks: a post with a picture in the leaks source channel is reposted to the leaks channel as a card. The first line is the headline, the rest is the quoted body, the picture is the big image, and `LEAKS_THUMBNAIL_URL` is the small picture in the corner.
 - Announcements: `/announce` opens a form, with an optional @here, @everyone or role ping. `edit_message_id` edits an earlier one.
 - Events, merit and cR: `/event` previews pay for every attendee, the host confirms, and the bot sends merit and cR into each player's game save. Then it promotes by merit inside the division groups.
-- `/rank`, `/license`, `/pending`, `/ladder`, `/profile`, `/link`, `/grant` (staff), `/sync`.
+- Rank panel: one message in the rank panel channel with buttons for changing ranks, join requests, vehicle licenses and look-ups.
+- Blacklist: `/blacklist` keeps a Roblox user, or a group and all its members, out of the game and both Discord servers. Only xaiver and sepernts (`BLACKLIST_ADMIN_IDS`) can use it.
+- `/rank`, `/license`, `/pending`, `/profile`, `/link`, `/grant`, `/sync`, `/unwave`, `/announce`, `/event`.
 
 ## Groups and who manages them
 
@@ -21,7 +23,7 @@ Discord bot for the UNSC community. It handles:
 | ODST, 1st MID, 3rd MFR, 75th AAR, 7th MCSB, Navy, Materials Group | That group's Commanding Officer and Executive Officer ranks |
 | Vehicle & Flight Certification | Certification Officer, Director of Operational Standards and above |
 
-Permissions come only from Roblox ranks on the person's verified account, never from Discord roles. In `/rank`, `/license`, `/pending` and `/ladder` a person only sees the groups they manage, and only that group's ranks below their own. They cannot change anyone at or above their own rank. Every change goes to the rank log with who made it and in which group.
+Permissions come only from Roblox ranks on the person's verified account, never from Discord roles. In the rank panel, `/rank`, `/license` and `/pending` a person only sees the groups they manage, and only that group's ranks below their own. They cannot change anyone at or above their own rank. Every change goes to the rank log with who made it and in which group.
 
 ## Rank sync
 
@@ -40,9 +42,13 @@ Every `SYNC_EVERY_MINUTES` the bot reads the groups and fixes ranks:
 
 When several apply, the highest in this order wins: Marine Corps Command, Commissioned Military Personnel, Special Operations Personnel, Materials Group Personnel, Enlisted Naval Personnel, Enlisted Marine Personnel. Leadership, ONI, Naval Command and Unified Ground Command are never touched. `SYNC_DRY_RUN=true` only previews.
 
-## Merit ladders
+## Merit promotions
 
-A group's commanders set its ladder with `/ladder`, lowest rank first. Every `MERIT_PER_RANK` (200) merit earned since the last promotion moves someone one step. The approval rank (by default the last one, the top NCO rank) is never automatic: the group's commanders get a request with Approve and Deny buttons. Giving that rank or higher by hand with `/rank` notifies the Commanding Officer.
+Division ranks are numbered 1 to 10 in each group. Every `MERIT_PER_RANK` (200) merit earned since the last promotion moves someone up one rank, as far as rank 6: Sergeant Major (Support Sergeant Major in the 7th MCSB, Recon Sergeant Major in the 3rd MFR) or ODST Fireteam | Alpha. ODST Fireteam Leader (rank 7) can be earned too, but the Commanding or Executive Officer must approve it. Anyone given a rank above 6 by hand pings the Commanding and Executive Officers. The Marine Corps group has no promotions: it only shows each marine's unit, and Military Command for division Commanding and Executive Officers.
+
+## Hidden commands
+
+Staff commands are hidden from members without Manage Server (`/blacklist`: Administrator). To let a role use one, open Server Settings > Integrations > the bot, pick the command and add the role or person. Set `/blacklist` to xaiver and sepernts only there as well; the bot also refuses anyone else.
 
 ## Event pay
 

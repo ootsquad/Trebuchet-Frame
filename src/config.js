@@ -86,13 +86,23 @@ export const CONFIG = Object.freeze({
       odst: env('GROUP_ODST_ID') || env('GROUP_105TH_ODST_ID') || '547482530',
       mid: env('GROUP_1ST_MID_ID', '106191092'),
       mfr: env('GROUP_3RD_MFR_ID') || env('GROUP_3RD_MRU_ID') || '126808444',
-      aar: env('GROUP_75TH_AAR_ID'),
-      mcsb: env('GROUP_7TH_MCSB_ID')
+      aar: env('GROUP_75TH_AAR_ID', '271436257'),
+      mcsb: env('GROUP_7TH_MCSB_ID', '512707313')
     }),
     leftMarinesRank: env('UNSC_LEFT_RANK') || env('UNSC_LEFT_MARINES_RANK') || 'Registered Civilian',
     // Waving: this role in the Project: Trebuchet group.
     wavedRole: env('PROJECT_WAVED_ROLE', 'Waved')
   }),
+
+  blacklist: Object.freeze({
+    // Roblox user IDs allowed to use /blacklist (xaiver, sepernts).
+    admins: env('BLACKLIST_ADMIN_IDS', '497730291,25698705').split(',').map((id) => id.trim()).filter(Boolean),
+    store: env('BLACKLIST_STORE', 'TrebuchetBlacklist'),
+    entry: 'list',
+    topic: 'TrebuchetBlacklist'
+  }),
+
+  rankPanel: env('CHANNEL_RANK_PANEL', '1572500360214483026'),
 
   ranking: Object.freeze({
     meritPerRank: Math.max(1, num('MERIT_PER_RANK', 200))

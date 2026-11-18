@@ -220,18 +220,7 @@ export function createEvents({ client, store, roblox, ranking }) {
     ]);
     const total = economy.merit + economy.pendingMerit;
     const ranks = GROUPS.map((group, index) => groupRanks[index] && `**${group.short}:** ${groupRanks[index]}`).filter(Boolean);
-    // Progress toward the next merit step in each group that has a ladder.
-    const steps = [];
-    GROUPS.forEach((group, index) => {
-      const ladder = store.data.ladders?.[group.key];
-      const current = groupRanks[index];
-      if (!ladder?.ranks?.length || !current) return;
-      const at = ladder.ranks.findIndex((name) => name.toLowerCase() === current.toLowerCase());
-      if (at < 0 || at >= ladder.ranks.length - 1) return;
-      const base = store.data.meritBase?.[`${group.key}:${account.id}`];
-      const earned = typeof base === 'number' ? total - base : 0;
-      steps.push(`**${group.short}:** ${ladder.ranks[at + 1]} at ${Math.max(0, CONFIG.ranking.meritPerRank - earned)} more merit`);
-    });
+    const steps = await ranking.nextSteps(account, total);
     const next = steps.length ? steps.join('\n') : null;
     const embed = new EmbedBuilder()
       .setTitle(`${account.name}'s service record`)

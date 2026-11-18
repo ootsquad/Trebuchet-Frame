@@ -3,10 +3,14 @@
 import { CONFIG } from './config.js';
 
 const OFFICERS = /commanding officer|executive officer/i;
+// In every division group, these ranks may also manage it.
+const DIVISION_MANAGERS = ['Marine Corps Command', 'De-Facto Leader', 'Admin'];
 
 // kind: how membership counts toward the UNSC group (see unscTarget).
 // managers: exact rank names that may manage the group through the bot. managerPattern: any rank whose name matches.
 // marineRank: for divisions, the matching rank in the Marine Corps group.
+// earnable: the highest rank number reached by merit alone (ranks are numbered 1 to 10 in the divisions).
+// approval: a rank number that merit can reach only with the Commanding or Executive Officer's approval.
 export const GROUPS = Object.freeze([
   {
     key: 'project', name: 'Project: Trebuchet', short: 'Project: Trebuchet', groupId: CONFIG.groups.project, kind: 'project',
@@ -17,28 +21,34 @@ export const GROUPS = Object.freeze([
     managers: ['De Facto Leader', 'Secretary-General', 'UNSC Security Council', 'Naval Command', 'Unified Ground Command', 'Marine Corps Command']
   },
   {
+    // A hub that shows which unit someone is in. Only the bot changes it; nobody ranks people here by hand.
     key: 'marines', name: 'UNSC Marine Corps', short: 'Marine Corps', groupId: CONFIG.groups.marines, kind: 'marines',
-    managers: ['Commandant of the Marine Corps', 'Assistant Commandant of the Marine Corps', 'Marine Aviation Command', 'Military Command']
+    managers: []
   },
   {
     key: 'odst', name: 'UNSC Orbital Drop Shock Trooper', short: 'ODST', groupId: CONFIG.groups.divisions.odst, kind: 'division',
-    managerPattern: OFFICERS, marineRank: '105th Orbital Drop Shock Troopers', unscRank: 'Special Operations Personnel'
+    managers: DIVISION_MANAGERS, managerPattern: OFFICERS, marineRank: '105th Orbital Drop Shock Troopers', unscRank: 'Special Operations Personnel',
+    earnable: 6, approval: 7 // up to ODST Fireteam | Alpha by merit; Fireteam Leader needs the CO or XO
   },
   {
     key: 'mid', name: 'UNSC 1st Marine Infantry Division', short: '1st MID', groupId: CONFIG.groups.divisions.mid, kind: 'division',
-    managerPattern: OFFICERS, marineRank: '1st Marine Infantry Division', unscRank: 'Enlisted Marine Personnel'
+    managers: DIVISION_MANAGERS, managerPattern: OFFICERS, marineRank: '1st Marine Infantry Division', unscRank: 'Enlisted Marine Personnel',
+    earnable: 6 // up to Sergeant Major by merit
   },
   {
     key: 'mfr', name: 'UNSC 3rd Marine Force Reconnaissance', short: '3rd MFR', groupId: CONFIG.groups.divisions.mfr, kind: 'division',
-    managerPattern: OFFICERS, marineRank: '3rd Marine Force Reconnaissance', unscRank: 'Enlisted Marine Personnel'
+    managers: DIVISION_MANAGERS, managerPattern: OFFICERS, marineRank: '3rd Marine Force Reconnaissance', unscRank: 'Enlisted Marine Personnel',
+    earnable: 6 // up to Sergeant Major by merit
   },
   {
     key: 'aar', name: 'UNSC 75th Armored Assault Regiment', short: '75th AAR', groupId: CONFIG.groups.divisions.aar, kind: 'division',
-    managerPattern: OFFICERS, marineRank: '75th Armored Assault Regiment', unscRank: 'Enlisted Marine Personnel'
+    managers: DIVISION_MANAGERS, managerPattern: OFFICERS, marineRank: '75th Armored Assault Regiment', unscRank: 'Enlisted Marine Personnel',
+    earnable: 6 // up to Sergeant Major by merit
   },
   {
     key: 'mcsb', name: 'UNSC 7th Marine Combat Support Battalion', short: '7th MCSB', groupId: CONFIG.groups.divisions.mcsb, kind: 'division',
-    managerPattern: OFFICERS, marineRank: '7th Marine Combat Support Battalion', unscRank: 'Enlisted Marine Personnel'
+    managers: DIVISION_MANAGERS, managerPattern: OFFICERS, marineRank: '7th Marine Combat Support Battalion', unscRank: 'Enlisted Marine Personnel',
+    earnable: 6 // up to Sergeant Major by merit
   },
   {
     key: 'navy', name: 'UNSC Navy', short: 'Navy', groupId: CONFIG.groups.navy, kind: 'navy',
@@ -72,38 +82,47 @@ export function isManagerRank(group, rankName) {
 
 export const MARINES = Object.freeze({
   groupId: CONFIG.groups.marines,
-  // Never changed by the bot.
-  protected: ['Artificial Intelligence', 'Commandant of the Marine Corps', 'Assistant Commandant of the Marine Corps', 'Marine Aviation Command', 'Military Command'],
-  command: ['Commandant of the Marine Corps', 'Assistant Commandant of the Marine Corps', 'Marine Aviation Command', 'Military Command'],
-  unassigned: 'Unassigned Marine Personnel'
+  // The only Marine Corps ranks the bot sets or replaces. Everything else (command ranks and above) is left alone.
+  unassigned: 'Unassigned Marine Personnel',
+  recruit: 'Marine Recruit',
+  military: 'Military Command'
 });
 
+const marineManaged = () => [MARINES.unassigned, MARINES.recruit, MARINES.military, ...DIVISIONS.map((group) => group.marineRank)];
+
 // Pure: the Marine Corps rank someone should hold. null means leave it.
-// divisionKeys: the divisions whose groups they are in (in GROUPS order, the first wins).
-export function marineTarget(marineRank, divisionKeys) {
-  if (!marineRank || has(MARINES.protected, marineRank)) return null;
-  const division = DIVISIONS.find((entry) => divisionKeys.includes(entry.key));
-  if (division) return same(marineRank, division.marineRank) ? null : division.marineRank;
-  if (DIVISIONS.some((entry) => same(entry.marineRank, marineRank))) return MARINES.unassigned;
-  return null;
+// divisionRanks: { divisionKey: their rank there } for the divisions they are in (GROUPS order, the first wins).
+// A Commanding or Executive Officer of any division is Military Command.
+export function marineTarget(marineRank, divisionRanks) {
+  if (!marineRank || !has(marineManaged(), marineRank)) return null;
+  const keys = Array.isArray(divisionRanks) ? divisionRanks : Object.keys(divisionRanks || {});
+  const ranks = Array.isArray(divisionRanks) ? {} : divisionRanks || {};
+  let wanted = null;
+  if (keys.some((key) => OFFICERS.test(ranks[key] || ''))) wanted = MARINES.military;
+  else {
+    const division = DIVISIONS.find((entry) => keys.includes(entry.key));
+    if (division) wanted = division.marineRank;
+    else if (!same(marineRank, MARINES.recruit) && !same(marineRank, MARINES.unassigned)) wanted = MARINES.unassigned;
+  }
+  return wanted && !same(wanted, marineRank) ? wanted : null;
 }
 
 // ---------- UNSC ----------
 
-// Highest first: when several apply, the first one in this list wins.
+// The UNSC group's order (1 Undocumented Refugee up to 15 Secretary-General). When several apply, the highest wins.
 export const UNSC_PRIORITY = Object.freeze([
-  'Marine Corps Command',
-  'Commissioned Military Personnel',
-  'Special Operations Personnel',
-  'Materials Group Personnel',
-  'Enlisted Naval Personnel',
-  'Enlisted Marine Personnel'
+  'Materials Group Personnel', // 12
+  'Marine Corps Command', // 9
+  'Enlisted Naval Personnel', // 8
+  'Special Operations Personnel', // 7
+  'Commissioned Military Personnel', // 6
+  'Enlisted Marine Personnel' // 5
 ]);
 
 export const UNSC = Object.freeze({
   groupId: CONFIG.groups.unsc,
-  // The only UNSC ranks the bot ever changes. Leadership, ONI, Naval Command and Unified Ground Command are
-  // never touched.
+  // The only UNSC ranks the bot ever changes. Unified Ground Command, Naval Command, ONI, the Security Council,
+  // the Secretary-General and the De Facto Leader are never touched.
   managed: [...UNSC_PRIORITY, 'UNSC Candidate', 'Person of Interest', 'Registered Civilian', 'Undocumented Refugee'],
   leftEverything: CONFIG.groups.leftMarinesRank
 });
@@ -116,12 +135,12 @@ export function earnedUnscRank(ranks) {
     const rank = ranks[group.key];
     if (!rank) continue;
     if (group.kind === 'division') {
-      if (/commanding officer/i.test(rank)) earned.add('Marine Corps Command');
-      else if (/executive officer|company commander|operations officer/i.test(rank)) earned.add('Commissioned Military Personnel');
+      if (/commanding officer|marine corps command/i.test(rank)) earned.add('Marine Corps Command');
+      else if (/executive officer|operations officer|captain|lieutenant/i.test(rank)) earned.add('Commissioned Military Personnel');
       else earned.add(group.unscRank);
     } else if (group.kind === 'marines') {
-      if (has(MARINES.command, rank)) earned.add('Marine Corps Command');
-      else if (!same(rank, 'Artificial Intelligence')) earned.add('Enlisted Marine Personnel');
+      if (same(rank, MARINES.military)) earned.add('Marine Corps Command');
+      else if (has([MARINES.recruit, MARINES.unassigned, ...DIVISIONS.map((entry) => entry.marineRank)], rank)) earned.add('Enlisted Marine Personnel');
     } else if (group.kind === 'navy') {
       earned.add('Enlisted Naval Personnel');
     } else if (group.kind === 'materials') {

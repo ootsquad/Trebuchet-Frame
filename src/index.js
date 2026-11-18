@@ -12,6 +12,8 @@ import { createSync } from './sync.js';
 import { handleAutocomplete, handleCommand, handleLinkButton, registerCommands } from './commands.js';
 import { createAccess } from './access.js';
 import { createRanking } from './ranking.js';
+import { createBlacklist } from './blacklist.js';
+import { createRankPanel } from './panel.js';
 
 validateConfig();
 for (const problem of featureProblems()) console.warn(`[Setup] ${problem}`);
@@ -37,7 +39,9 @@ const leaks = createLeaks({ client, store });
 const announcements = createAnnouncements({ client });
 const events = createEvents({ client, store, roblox, ranking });
 const sync = createSync({ client, roblox, ranking });
-const applications = createApplicationService({ client, roblox, store, ranking, sync });
+const blacklist = createBlacklist({ client, store, roblox });
+const applications = createApplicationService({ client, roblox, store, ranking, sync, blacklist });
+const panel = createRankPanel({ client, store, roblox, access, ranking });
 
 client.once(Events.ClientReady, async (ready) => {
   console.log(`Discord connected as ${ready.user.tag}`);
@@ -48,9 +52,13 @@ client.once(Events.ClientReady, async (ready) => {
     console.error('[Registering slash commands]', error);
   }
   sync.start();
+  await panel.post().catch((error) => console.error('[Rank panel]', error));
+  // Blacklisted groups gain members over time: ban their linked accounts every sync period.
+  setInterval(() => blacklist.enforce().catch((error) => console.error('[Blacklist]', error)), CONFIG.sync.everyMinutes * 60_000).unref();
 });
 
 client.on(Events.GuildMemberAdd, async (member) => {
+  if (await blacklist.onJoin(member).catch(() => false)) return;
   if (!CONFIG.waves.onJoin || member.guild.id !== CONFIG.guildId) return;
   await applications.start(member, 'joining the Discord server').catch((error) => console.error('[Wave on join]', error));
 });
@@ -59,6 +67,7 @@ client.on(Events.MessageCreate, async (message) => {
   if (!message.guild) return;
   try {
     // Leaks come from the development server; suggestions from the main one.
+    if (message.channelId === CONFIG.rankPanel && !message.author.bot) { await message.delete().catch(() => {}); return; }
     if (message.guild.id === CONFIG.guildId && (await suggestions.onMessage(message))) return;
     if (message.guild.id === CONFIG.guildId || message.guild.id === CONFIG.devGuildId) await leaks.onMessage(message);
   } catch (error) {
@@ -77,9 +86,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (await applications.handleButton(interaction)) return;
     if (await ranking.button(interaction)) return;
     if (await events.button(interaction)) return;
-    if (await handleLinkButton(interaction, { store })) return;
+    if (await handleLinkButton(interaction, { store, blacklist })) return;
+    if (await panel.handle(interaction)) return;
     if (await announcements.submit(interaction)) return;
-    await handleCommand(interaction, { applications, suggestions, announcements, events, sync, ranking, roblox, store });
+    await handleCommand(interaction, { applications, suggestions, announcements, events, sync, ranking, blacklist, roblox, store });
   } catch (error) {
     console.error(`[Interaction ${interaction.id}]`, error);
     if (!interaction.isRepliable()) return;

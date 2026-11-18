@@ -238,23 +238,23 @@ export class RobloxService {
 
   // ---------- the game's economy save (Open Cloud data stores v1) ----------
 
-  #entryUrl(key, extra = {}) {
-    const query = new URLSearchParams({ datastoreName: CONFIG.roblox.economyStore, entryKey: key, ...extra });
+  #entryUrl(key, extra = {}, store = CONFIG.roblox.economyStore) {
+    const query = new URLSearchParams({ datastoreName: store, entryKey: key, ...extra });
     return `https://apis.roblox.com/datastores/v1/universes/${this.universeId}/standard-datastores/datastore/entries/entry?${query}`;
   }
 
-  async getEntry(key) {
-    const response = await fetch(this.#entryUrl(key), { headers: { 'x-api-key': this.dataStoreKey } });
+  async getEntry(key, store) {
+    const response = await fetch(this.#entryUrl(key, {}, store), { headers: { 'x-api-key': this.dataStoreKey } });
     if (response.status === 404) return { value: null, version: null };
     const value = await parseResponse(response);
     return { value, version: response.headers.get('roblox-entry-version') };
   }
 
-  async #setEntry(key, value, version) {
+  async #setEntry(key, value, version, store) {
     const body = JSON.stringify(value);
     const md5 = crypto.createHash('md5').update(body).digest('base64');
     const extra = version ? { matchVersion: version } : { exclusiveCreate: 'true' };
-    const response = await fetch(this.#entryUrl(key, extra), {
+    const response = await fetch(this.#entryUrl(key, extra, store), {
       method: 'POST',
       headers: { 'x-api-key': this.dataStoreKey, 'content-type': 'application/json', 'content-md5': md5 },
       body
@@ -263,13 +263,13 @@ export class RobloxService {
   }
 
   // Read-modify-write that retries when the game wrote in between (version mismatch).
-  async updateEntry(key, change) {
+  async updateEntry(key, change, store) {
     for (let attempt = 0; attempt < 5; attempt += 1) {
-      const { value, version } = await this.getEntry(key);
+      const { value, version } = await this.getEntry(key, store);
       const next = change(value);
       if (next === undefined) return value;
       try {
-        await this.#setEntry(key, next, version);
+        await this.#setEntry(key, next, version, store);
         return next;
       } catch (error) {
         if (![409, 412].includes(error.status)) throw error;
@@ -277,6 +277,25 @@ export class RobloxService {
       }
     }
     throw new Error(`Could not update ${key}: the game kept writing to it. Try again.`);
+  }
+
+  // Tells running game servers something right away (MessagingService). Needs the key's messaging permission;
+  // returns false instead of failing when it is missing.
+  async publish(topic, message) {
+    try {
+      await this.openCloud(`/messaging-service/v1/universes/${this.universeId}/topics/${encodeURIComponent(topic)}`, {
+        method: 'POST',
+        body: JSON.stringify({ message: typeof message === 'string' ? message : JSON.stringify(message) })
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async groupInfo(groupId) {
+    const body = await parseResponse(await fetch(`https://groups.roblox.com/v1/groups/${groupId}`));
+    return { id: String(body.id), name: body.name, memberCount: body.memberCount };
   }
 
   // Credits (cR) and Xp (merit) from the player's save.

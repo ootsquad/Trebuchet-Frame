@@ -212,7 +212,7 @@ async function updateApplicationStatus(message, { status, moderator, note = null
   await message.edit({ embeds: [first, ...remaining], components: [buildDecisionRow(parsed.discordUserId, parsed.robloxUserId, true)] });
 }
 
-export function createApplicationService({ client, roblox, store, ranking = null, sync = null }) {
+export function createApplicationService({ client, roblox, store, ranking = null, sync = null, blacklist = null }) {
   const project = () => groupByKey('project');
 
   // Project: Trebuchet: accept their join request if they have one, then give the Waved role.
@@ -288,6 +288,11 @@ export function createApplicationService({ client, roblox, store, ranking = null
       const owner = store.discordFor(robloxUser.id);
       if (owner && owner !== member.id) {
         throw new Error(`The Roblox account ${robloxUser.name} is already linked to another Discord account. Contact a Wave Moderator.`);
+      }
+      const blocked = blacklist ? await blacklist.reasonFor(robloxUser.id) : null;
+      if (blocked) {
+        await blacklist.ban(member.id, blocked);
+        throw new Error('This Roblox account is blacklisted.');
       }
       if (owner === member.id) {
         await dm.send({ embeds: [note(`✅ **${robloxUser.name}** is already verified as yours, so ${step(2).toLowerCase()} is skipped.`, COLORS.good)] });

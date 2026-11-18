@@ -84,19 +84,34 @@ test('unlinked users manage nothing', async () => {
   await assert.rejects(ranking.rankCommand(interaction('nobody', { group: 'odst', roblox_user: 'trooper', new_rank: 'ODST Lance Corporal' })), /Link and verify/);
 });
 
-test('merit moves one step per 200, the approval rank waits for a commander', async () => {
+test('merit moves one rank per 200 up to rank 6, ODST rank 7 waits for approval', async () => {
   const { ranking, store } = setup();
-  members.set('3', 'r10');
-  store.data.ladders.odst = { ranks: ['Orbital Drop Shock Trooper', 'ODST Lance Corporal', 'ODST Fireteam Leader'], approval: 'ODST Fireteam Leader' };
+  roles.splice(0, roles.length,
+    { displayName: 'Guest', rank: 0, path: 'r0' },
+    { displayName: 'Awaiting Assignment', rank: 1, path: 'p1' },
+    { displayName: 'Orbital Drop Shock Trooper', rank: 2, path: 'p2' },
+    { displayName: 'ODST Fireteam | Delta', rank: 3, path: 'p3' },
+    { displayName: 'ODST Fireteam | Charlie', rank: 4, path: 'p4' },
+    { displayName: 'ODST Fireteam | Bravo', rank: 5, path: 'p5' },
+    { displayName: 'ODST Fireteam | Alpha', rank: 6, path: 'p6' },
+    { displayName: 'ODST Fireteam Leader', rank: 7, path: 'p7' },
+    { displayName: 'ODST Operations Officer', rank: 8, path: 'p8' },
+    { displayName: 'ODST Executive Officer', rank: 9, path: 'p9' },
+    { displayName: 'ODST Commanding Officer', rank: 10, path: 'p10' },
+    { displayName: 'Artificial Intelligence', rank: 200, path: 'p200' });
+  members.set('1', 'p10'); members.set('2', 'p9'); members.set('3', 'p5');
   const account = { id: '3', name: 'trooper' };
-  assert.equal((await ranking.checkPromotions(account, 50)).length, 0); // sets the starting point
-  assert.equal((await ranking.checkPromotions(account, 200)).length, 0); // 150 since then
+  assert.equal((await ranking.checkPromotions(account, 50)).length, 0); // starting point
+  assert.equal((await ranking.checkPromotions(account, 200)).length, 0); // only 150 since
   const first = await ranking.checkPromotions(account, 250);
-  assert.equal(first[0].to, 'ODST Lance Corporal');
-  assert.equal(first[0].pending, false);
+  assert.equal(first[0].to, 'ODST Fireteam | Alpha');
   const second = await ranking.checkPromotions(account, 460);
   assert.equal(second[0].to, 'ODST Fireteam Leader');
   assert.equal(second[0].pending, true);
-  assert.equal(members.get('3'), 'r20'); // still Lance Corporal until approved
+  assert.equal(members.get('3'), 'p6');
   assert.ok(Object.values(store.data.promotionRequests).some((r) => r.open && r.to === 'ODST Fireteam Leader'));
+  // An XO giving Fireteam Leader by hand pings the commanders
+  const reply = interaction('d2', { roblox_user: 'trooper', new_rank: 'odst::ODST Fireteam Leader' });
+  await ranking.rankCommand(reply);
+  assert.equal(members.get('3'), 'p7');
 });

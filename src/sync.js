@@ -1,6 +1,7 @@
 // Rank sync across the groups. Every few minutes the bot reads the groups and fixes ranks by the rules in
 // groups.js:
-//   Marine Corps:  in a division group -> that division's rank; left every division -> Unassigned Marine Personnel
+//   Marine Corps:  in a division -> that division's name; a division CO or XO -> Military Command;
+//                  left every division -> Unassigned Marine Personnel
 //   UNSC:          the rank their memberships earn (Special Operations for ODST, Enlisted Marine, Commissioned for
 //                  executive officers, Marine Corps Command for commanding officers, Materials Group, Naval)
 // With SYNC_DRY_RUN=true it only posts what it would change.
@@ -40,6 +41,7 @@ export function createSync({ client, roblox, ranking }) {
   }
 
   const divisionKeys = (ranks) => Object.keys(ranks).filter((key) => groupByKey(key)?.kind === 'division');
+  const divisionRanks = (ranks) => Object.fromEntries(divisionKeys(ranks).map((key) => [key, ranks[key]]));
 
   async function plan() {
     const byUser = await memberships();
@@ -50,7 +52,7 @@ export function createSync({ client, roblox, ranking }) {
     for (const [userId, ranks] of byUser) {
       const divisions = divisionKeys(ranks);
       if (divisions.length && !ranks.marines) notInMarines.push({ userId, divisions });
-      const wanted = marineTarget(ranks.marines || null, divisions);
+      const wanted = marineTarget(ranks.marines || null, divisionRanks(ranks));
       if (wanted) {
         changes.push({ userId, group: groupByKey('marines'), from: ranks.marines, to: wanted });
         ranks.marines = wanted;
@@ -108,7 +110,7 @@ export function createSync({ client, roblox, ranking }) {
     const names = await roblox.usernames([robloxUserId]);
     const target = { id: robloxUserId, name: names.get(robloxUserId) || robloxUserId };
     const lines = [];
-    const marineWanted = marineTarget(ranks.marines || null, divisionKeys(ranks));
+    const marineWanted = marineTarget(ranks.marines || null, divisionRanks(ranks));
     if (marineWanted) {
       if (!dryRun) {
         await roblox.setRank(MARINES.groupId, robloxUserId, marineWanted);

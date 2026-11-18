@@ -26,6 +26,7 @@ export const commandData = [
 
   new SlashCommandBuilder()
     .setName('announce')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .setDescription('Post or edit an announcement.')
     .addStringOption((o) => o.setName('ping').setDescription('Who to ping').addChoices(
       { name: 'Nobody', value: 'none' },
@@ -39,6 +40,7 @@ export const commandData = [
 
   new SlashCommandBuilder()
     .setName('event')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .setDescription('Log an event and pay merit and cR to the attendees.')
     .addStringOption((o) => o.setName('type').setDescription('Event type').setRequired(true).addChoices(...eventChoices))
     .addStringOption((o) => o.setName('attendees').setDescription('Roblox usernames, separated by spaces or commas').setRequired(true).setMaxLength(4000))
@@ -60,6 +62,7 @@ export const commandData = [
 
   new SlashCommandBuilder()
     .setName('grant')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .setDescription('Staff: give merit or cR by hand.')
     .addStringOption((o) => o.setName('roblox_user').setDescription('Roblox username or user ID').setRequired(true))
     .addStringOption((o) => o.setName('reason').setDescription('Why').setRequired(true).setMaxLength(500))
@@ -68,6 +71,7 @@ export const commandData = [
 
   new SlashCommandBuilder()
     .setName('rank')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .setDescription('Change a rank in a group you command. You only see your own groups and ranks below yours.')
     .addStringOption((o) => o.setName('roblox_user').setDescription('Roblox username or user ID').setRequired(true))
     .addStringOption((o) => o.setName('new_rank').setDescription('The new rank. Each shows its group, like ODST › ODST Fireteam Leader').setRequired(true).setAutocomplete(true))
@@ -76,6 +80,7 @@ export const commandData = [
 
   new SlashCommandBuilder()
     .setName('license')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .setDescription('Vehicle & Flight Certification: give or change a driving or flying license.')
     .addStringOption((o) => o.setName('roblox_user').setDescription('Roblox username or user ID').setRequired(true))
     .addStringOption((o) => o.setName('new_rank').setDescription('The certification').setRequired(true).setAutocomplete(true))
@@ -83,26 +88,36 @@ export const commandData = [
 
   new SlashCommandBuilder()
     .setName('pending')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .setDescription('See and accept or decline join requests for a group you manage.')
     .addStringOption((o) => o.setName('group').setDescription('A group you manage').setRequired(true).setAutocomplete(true)),
 
   new SlashCommandBuilder()
-    .setName('ladder')
-    .setDescription('View or set the merit ladder of a group you command.')
-    .addStringOption((o) => o.setName('group').setDescription('A group you manage').setRequired(true).setAutocomplete(true))
-    .addStringOption((o) => o.setName('ranks').setDescription('Lowest first, like: Private > Lance Corporal > Corporal. Leave empty to view.').setMaxLength(1000))
-    .addStringOption((o) => o.setName('approval_rank').setDescription('The rank that needs a commander to approve (default: the last one)')),
-
-  new SlashCommandBuilder()
     .setName('unwave')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .setDescription('Wave Moderators: take the Waved role away in Project: Trebuchet and Discord.')
     .addUserOption((o) => o.setName('member').setDescription('The Discord member').setRequired(true))
     .addStringOption((o) => o.setName('reason').setDescription('Why').setRequired(true).setMaxLength(500)),
 
   new SlashCommandBuilder()
     .setName('sync')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .setDescription('Fix ranks across the UNSC, Marine Corps and division groups.')
-    .addStringOption((o) => o.setName('roblox_user').setDescription('One person. Leave empty (staff) to sync everyone.'))
+    .addStringOption((o) => o.setName('roblox_user').setDescription('One person. Leave empty (staff) to sync everyone.')),
+
+  new SlashCommandBuilder()
+    .setName('blacklist')
+    .setDescription('Keep a Roblox user, or a group and its members, out of the game and Discord.')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addSubcommand((sub) => sub.setName('add').setDescription('Blacklist a user or a group')
+      .addStringOption((o) => o.setName('type').setDescription('User or group').setRequired(true).addChoices({ name: 'Roblox user', value: 'user' }, { name: 'Roblox group (and all its members)', value: 'group' }))
+      .addStringOption((o) => o.setName('target').setDescription('Roblox username or ID, or the group ID or link').setRequired(true))
+      .addStringOption((o) => o.setName('reason').setDescription('Why').setRequired(true).setMaxLength(500)))
+    .addSubcommand((sub) => sub.setName('remove').setDescription('Take a user or a group off the blacklist')
+      .addStringOption((o) => o.setName('type').setDescription('User or group').setRequired(true).addChoices({ name: 'Roblox user', value: 'user' }, { name: 'Roblox group', value: 'group' }))
+      .addStringOption((o) => o.setName('target').setDescription('Roblox username or ID, or the group ID or link').setRequired(true))
+      .addStringOption((o) => o.setName('reason').setDescription('Why').setMaxLength(500)))
+    .addSubcommand((sub) => sub.setName('list').setDescription('Show the blacklist'))
 ].map((command) => command.toJSON());
 
 // Registered for every server the bot is in (each division can add it).
@@ -119,7 +134,7 @@ const isStaff = (member) => member?.permissions?.has(PermissionFlagsBits.ManageG
   Boolean(CONFIG.roles.waveModerator && member?.roles?.cache?.has(CONFIG.roles.waveModerator));
 
 // The Verify button from /link.
-export async function handleLinkButton(interaction, { store }) {
+export async function handleLinkButton(interaction, { store, blacklist }) {
   if (!interaction.isButton() || interaction.customId !== 'link:verify') return false;
   const pending = pendingLinks.get(interaction.user.id);
   if (!pending || pending.expires < Date.now()) {
@@ -138,6 +153,12 @@ export async function handleLinkButton(interaction, { store }) {
   }
   pendingLinks.delete(interaction.user.id);
   store.link(interaction.user.id, pending.account);
+  const blocked = blacklist ? await blacklist.reasonFor(pending.account.id) : null;
+  if (blocked) {
+    await interaction.editReply({ embeds: [note('This account is blacklisted.', COLORS.bad)], components: [] });
+    await blacklist.ban(interaction.user.id, blocked);
+    return true;
+  }
   await interaction.editReply({ embeds: [note(`✅ Linked to **${pending.account.name}**. You can delete the phrase from your profile now.`, COLORS.good)], components: [] });
   return true;
 }
@@ -149,7 +170,7 @@ export async function handleAutocomplete(interaction, { ranking }) {
   return true;
 }
 
-export async function handleCommand(interaction, { applications, suggestions, announcements, events, sync, ranking, roblox, store }) {
+export async function handleCommand(interaction, { applications, suggestions, announcements, events, sync, ranking, blacklist, roblox, store }) {
   if (!interaction.isChatInputCommand()) return false;
   const name = interaction.commandName;
 
@@ -202,10 +223,10 @@ export async function handleCommand(interaction, { applications, suggestions, an
     return true;
   }
 
+  if (name === 'blacklist') return blacklist.command(interaction).then(() => true);
   if (name === 'rank') return ranking.rankCommand(interaction).then(() => true);
   if (name === 'license') return ranking.rankCommand(interaction, 'vehicles').then(() => true);
   if (name === 'pending') return ranking.pendingCommand(interaction).then(() => true);
-  if (name === 'ladder') return ranking.ladderCommand(interaction).then(() => true);
   if (name === 'unwave') return applications.unwave(interaction).then(() => true);
   return false;
 }
