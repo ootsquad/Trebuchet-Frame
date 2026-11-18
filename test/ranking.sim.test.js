@@ -35,7 +35,9 @@ const fake = {
   },
   async resolveUser(name) { return { id: name === 'trooper' ? '3' : name === 'xo' ? '2' : '1', name }; },
   async listMembers() { return new Map([...members].map(([id, p]) => [id, roles.find((r) => r.path === p).displayName])); },
-  async usernames(ids) { return new Map(ids.map((id) => [id, `user${id}`])); }
+  async usernames(ids) { return new Map(ids.map((id) => [id, `user${id}`])); },
+  async headshotUrl() { return 'https://tr.rbxcdn.com/head.png'; },
+  async groupIconUrl() { return 'https://tr.rbxcdn.com/icon.png'; }
 };
 const sent = [];
 const client = { channels: { fetch: async () => ({ send: async (msg) => { sent.push(msg); return msg; } }) } };

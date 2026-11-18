@@ -70,29 +70,6 @@ export const commandData = [
     .addIntegerOption((o) => o.setName('credits').setDescription('cR to give').setMinValue(0).setMaxValue(1000000)),
 
   new SlashCommandBuilder()
-    .setName('rank')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-    .setDescription('Change a rank in a group you command. You only see your own groups and ranks below yours.')
-    .addStringOption((o) => o.setName('roblox_user').setDescription('Roblox username or user ID').setRequired(true))
-    .addStringOption((o) => o.setName('new_rank').setDescription('The new rank. Each shows its group, like ODST › ODST Fireteam Leader').setRequired(true).setAutocomplete(true))
-    .addStringOption((o) => o.setName('group').setDescription('Optional: only show ranks from this group').setAutocomplete(true))
-    .addStringOption((o) => o.setName('reason').setDescription('Shown in the rank log').setMaxLength(500)),
-
-  new SlashCommandBuilder()
-    .setName('license')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-    .setDescription('Vehicle & Flight Certification: give or change a driving or flying license.')
-    .addStringOption((o) => o.setName('roblox_user').setDescription('Roblox username or user ID').setRequired(true))
-    .addStringOption((o) => o.setName('new_rank').setDescription('The certification').setRequired(true).setAutocomplete(true))
-    .addStringOption((o) => o.setName('reason').setDescription('Shown in the rank log').setMaxLength(500)),
-
-  new SlashCommandBuilder()
-    .setName('pending')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-    .setDescription('See and accept or decline join requests for a group you manage.')
-    .addStringOption((o) => o.setName('group').setDescription('A group you manage').setRequired(true).setAutocomplete(true)),
-
-  new SlashCommandBuilder()
     .setName('unwave')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .setDescription('Wave Moderators: take the Waved role away in Project: Trebuchet and Discord.')
@@ -224,9 +201,6 @@ export async function handleCommand(interaction, { applications, suggestions, an
   }
 
   if (name === 'blacklist') return blacklist.command(interaction).then(() => true);
-  if (name === 'rank') return ranking.rankCommand(interaction).then(() => true);
-  if (name === 'license') return ranking.rankCommand(interaction, 'vehicles').then(() => true);
-  if (name === 'pending') return ranking.pendingCommand(interaction).then(() => true);
   if (name === 'unwave') return applications.unwave(interaction).then(() => true);
   return false;
 }

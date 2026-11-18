@@ -458,8 +458,8 @@ export function createApplicationService({ client, roblox, store, ranking = null
         });
         if (ranking && project()) {
           await ranking.logChange({
-            group: project(), target: linked, from: robloxResult.accepted ? 'Join request' : 'Member', to: CONFIG.groups.wavedRole,
-            by: `<@${moderator.id}> (Wave Moderator)`, reason: 'Wave application approved', color: COLORS.good
+            group: project(), target: linked, kind: 'waved', from: robloxResult.accepted ? 'Join request' : 'Member', to: CONFIG.groups.wavedRole,
+            by: { discordId: moderator.id, robloxName: store.linkedRoblox(moderator.id)?.name, authority: 'Wave Moderator' }, reason: 'Wave application approved'
           }).catch(() => {});
         }
 
@@ -521,7 +521,7 @@ export function createApplicationService({ client, roblox, store, ranking = null
       done.push('Discord role swapped back to Un-Waved');
     }
     if (ranking && project() && link) {
-      await ranking.logChange({ group: project(), target: link, from: CONFIG.groups.wavedRole, to: 'Not waved', by: `<@${interaction.user.id}> (Wave Moderator)`, reason, color: COLORS.bad }).catch(() => {});
+      await ranking.logChange({ group: project(), target: link, kind: 'unwaved', from: CONFIG.groups.wavedRole, to: 'Not waved', by: { discordId: interaction.user.id, robloxName: store.linkedRoblox(interaction.user.id)?.name, authority: 'Wave Moderator' }, reason }).catch(() => {});
     }
     await interaction.editReply(done.length ? `Unwaved <@${user.id}>: ${done.join('. ')}.` : 'Nothing to take away: they had no Waved role.');
   }

@@ -81,7 +81,7 @@ export function createSync({ client, roblox, ranking }) {
         if (dryRun) { previews.push(`${target.name}: ${change.group.short} ${change.from} → ${change.to}`); continue; }
         try {
           await roblox.setRank(change.group.groupId, change.userId, change.to);
-          await ranking.logChange({ group: change.group, target, from: change.from, to: change.to, by: 'Rank sync', reason: `Group membership (${reason})` });
+          await ranking.logChange({ group: change.group, target, kind: 'sync', from: change.from, to: change.to, by: '🔄 Rank sync', reason: 'Follows their group memberships' });
           done += 1;
         } catch (error) {
           failed.push(`${target.name}: ${change.group.short} ${change.from} → ${change.to} (${String(error.message).slice(0, 120)})`);
@@ -101,7 +101,7 @@ export function createSync({ client, roblox, ranking }) {
   }
 
   // One person, right now (used by /sync and after waving).
-  async function syncOne(robloxUserId, { dryRun = CONFIG.sync.dryRun, by = 'Rank sync' } = {}) {
+  async function syncOne(robloxUserId, { dryRun = CONFIG.sync.dryRun, by = '🔄 Rank sync' } = {}) {
     const ranks = {};
     for (const group of SOURCES) {
       const rank = await roblox.getRank(group.groupId, robloxUserId).catch(() => null);
@@ -114,7 +114,7 @@ export function createSync({ client, roblox, ranking }) {
     if (marineWanted) {
       if (!dryRun) {
         await roblox.setRank(MARINES.groupId, robloxUserId, marineWanted);
-        await ranking.logChange({ group: groupByKey('marines'), target, from: ranks.marines, to: marineWanted, by });
+        await ranking.logChange({ group: groupByKey('marines'), target, kind: 'sync', from: ranks.marines, to: marineWanted, by, reason: 'Follows their group memberships' });
       }
       lines.push(`Marine Corps: ${ranks.marines} → ${marineWanted}`);
       ranks.marines = marineWanted;
@@ -126,7 +126,7 @@ export function createSync({ client, roblox, ranking }) {
     if (unscWanted) {
       if (!dryRun) {
         await roblox.setRank(UNSC.groupId, robloxUserId, unscWanted);
-        await ranking.logChange({ group: groupByKey('unsc'), target, from: unscRank, to: unscWanted, by });
+        await ranking.logChange({ group: groupByKey('unsc'), target, kind: 'sync', from: unscRank, to: unscWanted, by, reason: 'Follows their group memberships' });
       }
       lines.push(`UNSC: ${unscRank} → ${unscWanted}`);
     }
@@ -148,7 +148,7 @@ export function createSync({ client, roblox, ranking }) {
       return;
     }
     const user = await roblox.resolveUser(typed);
-    const { lines } = await syncOne(user.id, { by: `/sync by <@${interaction.user.id}>` });
+    const { lines } = await syncOne(user.id, { by: { discordId: interaction.user.id, authority: '/sync' } });
     await interaction.editReply(lines.length ? `${user.name}${CONFIG.sync.dryRun ? ' (preview only, SYNC_DRY_RUN is on)' : ''}:\n${lines.join('\n')}` : `${user.name} is already right.`);
   }
 

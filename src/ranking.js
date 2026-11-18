@@ -30,26 +30,49 @@ export function createRanking({ client, store, roblox, access }) {
     return channel ? channel.send({ embeds: [embed], allowedMentions: { parse: [] }, ...extra }) : null;
   }
 
-  // One rank change: who, where, from, to, by whom and why.
-  async function logChange({ group, target, from, to, by, reason, color = COLORS.info, promotion = false, ping = [] }) {
+  const KINDS = {
+    promotion: { emoji: '⬆️', title: 'Promotion', color: COLORS.good },
+    demotion: { emoji: '⬇️', title: 'Demotion', color: COLORS.bad },
+    change: { emoji: '🔁', title: 'Rank change', color: COLORS.info },
+    sync: { emoji: '🔄', title: 'Rank synced', color: COLORS.info },
+    'role-added': { emoji: '➕', title: 'Role given', color: COLORS.good },
+    'role-removed': { emoji: '➖', title: 'Role taken away', color: COLORS.warn },
+    'join-accepted': { emoji: '📥', title: 'Join request accepted', color: COLORS.good },
+    'join-declined': { emoji: '🚫', title: 'Join request declined', color: COLORS.bad },
+    waved: { emoji: '🌊', title: 'Waved', color: COLORS.good },
+    unwaved: { emoji: '🚫', title: 'Unwaved', color: COLORS.bad }
+  };
+
+  // who: "<@id>" plus their Roblox name and what let them do it, or a plain word (Merit, Rank sync).
+  const actorField = (by) => (typeof by === 'string' ? by : `<@${by.discordId}>${by.robloxName || by.authority ? `\n-# ${[by.robloxName, by.authority].filter(Boolean).join(' · ')}` : ''}`);
+
+  // One logged change. kind picks the title, emoji and color (see KINDS).
+  async function logChange({ group, target, kind = 'change', from, to, role = null, by, reason, ping = [], promotion = false }) {
+    const look = KINDS[kind] || KINDS.change;
+    const isRole = kind === 'role-added' || kind === 'role-removed';
     const embed = new EmbedBuilder()
-      .setColor(color)
-      .setAuthor({ name: `${group.short} · ${promotion ? 'Promotion' : 'Rank change'}` })
-      .setTitle(target.name)
-      .setURL(`https://www.roblox.com/users/${target.id}/profile`)
-      .addFields(
-        { name: 'From', value: from || 'None', inline: true },
-        { name: 'To', value: to, inline: true },
-        { name: 'By', value: by, inline: true }
-      )
+      .setColor(look.color)
+      .setAuthor({ name: group.short, iconURL: (await roblox.groupIconUrl(group.groupId).catch(() => null)) || undefined })
+      .setTitle(`${look.emoji}  ${look.title}`)
+      .setDescription(`**[${target.name}](https://www.roblox.com/users/${target.id}/profile)**`)
+      .setFooter({ text: `Roblox group ${group.groupId}` })
       .setTimestamp();
-    if (reason) embed.addFields({ name: 'Reason', value: String(reason).slice(0, 1000) });
-    const content = ping.length ? ping.map((id) => `<@${id}>`).join(' ') : undefined;
-    await send(promotion ? CONFIG.channels.promotions || CONFIG.channels.rankLogs : CONFIG.channels.rankLogs, embed, {
-      content,
-      allowedMentions: { users: ping }
-    });
-    if (promotion && CONFIG.channels.promotions && CONFIG.channels.rankLogs && CONFIG.channels.promotions !== CONFIG.channels.rankLogs) {
+    const headshot = await roblox.headshotUrl(target.id).catch(() => null);
+    if (headshot) embed.setThumbnail(headshot);
+    if (isRole) {
+      embed.addFields(
+        { name: kind === 'role-added' ? 'Given' : 'Taken away', value: `\`${role}\``, inline: true },
+        { name: 'Now holds', value: to ? to.split(', ').map((name) => `\`${name}\``).join(' ') : 'No roles', inline: true }
+      );
+    } else if (from || to) {
+      embed.addFields({ name: 'Rank', value: `\`${from || 'None'}\`  ➜  **\`${to}\`**` });
+    }
+    embed.addFields({ name: 'By', value: actorField(by), inline: true });
+    if (reason) embed.addFields({ name: 'Reason', value: String(reason).slice(0, 1000), inline: true });
+    const promo = promotion || kind === 'promotion';
+    const content = ping.length ? `${ping.map((id) => `<@${id}>`).join(' ')} heads up: a rank above what merit earns was given.` : undefined;
+    await send(promo ? CONFIG.channels.promotions || CONFIG.channels.rankLogs : CONFIG.channels.rankLogs, embed, { content, allowedMentions: { users: ping } });
+    if (promo && CONFIG.channels.promotions && CONFIG.channels.rankLogs && CONFIG.channels.promotions !== CONFIG.channels.rankLogs) {
       await send(CONFIG.channels.rankLogs, embed);
     }
   }
@@ -99,8 +122,8 @@ export function createRanking({ client, store, roblox, access }) {
       access.forget(group, target.id);
       const after = (await roblox.getRoles(group.groupId, target.id)).map((entry) => entry.name);
       await logChange({
-        group, target, from: held.join(', ') || 'None', to: after.join(', ') || 'None', by: `<@${discordUserId}> (${actor.name}, ${role.name})`,
-        reason: `${has ? 'Took away' : 'Gave'} ${rank.name}${reason ? `\n${reason}` : ''}`, color: has ? COLORS.warn : COLORS.info
+        group, target, kind: has ? 'role-removed' : 'role-added', role: rank.name, to: after.join(', '),
+        by: { discordId: discordUserId, robloxName: actor.name, authority: role.name }, reason
       });
       return { group, before: held.join(', ') || 'None', after: after.join(', ') || 'None', needsCommand: false };
     }
@@ -111,10 +134,9 @@ export function createRanking({ client, store, roblox, access }) {
     access.forget(group, target.id);
     const ping = needsCommand ? (await commandersOf(group)).filter((id) => id !== discordUserId) : [];
     await logChange({
-      group, target, from: result.before, to: result.rank, by: `<@${discordUserId}> (${actor.name}, ${role.name})`,
-      reason: needsCommand ? `${reason ? `${reason}\n` : ''}⚠️ ${rank.name} is above the ranks earned by merit. Commanding and Executive Officers notified.` : reason,
-      color: needsCommand ? COLORS.warn : COLORS.info,
-      promotion: rank.rank > current.rank,
+      group, target, kind: rank.rank > current.rank ? 'promotion' : 'demotion', from: result.before, to: result.rank,
+      by: { discordId: discordUserId, robloxName: actor.name, authority: role.name },
+      reason: needsCommand ? `${reason ? `${reason}\n` : ''}⚠️ Above the ranks earned by merit` : reason,
       ping
     });
     store.data.meritBase[`${group.key}:${target.id}`] = null; // the next merit step counts from their next check
@@ -227,10 +249,10 @@ export function createRanking({ client, store, roblox, access }) {
     const target = { id: userId, name: names.get(userId) || userId };
     if (action === 'accept') {
       await roblox.acceptJoinRequest(group.groupId, userId);
-      await logChange({ group, target, from: 'Join request', to: 'Accepted into the group', by: `<@${interaction.user.id}>${actor ? ` (${actor.name}, ${role.name})` : ''}`, color: COLORS.good });
+      await logChange({ group, target, kind: 'join-accepted', by: { discordId: interaction.user.id, robloxName: actor?.name, authority: role.name } });
     } else {
       await roblox.declineJoinRequest(group.groupId, userId);
-      await logChange({ group, target, from: 'Join request', to: 'Declined', by: `<@${interaction.user.id}>${actor ? ` (${actor.name}, ${role.name})` : ''}`, color: COLORS.bad });
+      await logChange({ group, target, kind: 'join-declined', by: { discordId: interaction.user.id, robloxName: actor?.name, authority: role.name } });
     }
     await interaction.editReply(await pendingView(group));
   }
@@ -271,7 +293,7 @@ export function createRanking({ client, store, roblox, access }) {
       const result = await roblox.setRank(group.groupId, account.id, next.name);
       store.data.meritBase[baseKey] = merit;
       store.save();
-      await logChange({ group, target: account, from: result.before, to: result.rank, by: 'Merit', reason: `${merit} merit`, color: COLORS.good, promotion: true });
+      await logChange({ group, target: account, kind: 'promotion', from: result.before, to: result.rank, by: '🏅 Merit', reason: `Reached ${merit} merit` });
       results.push({ group, account, to: next.name, pending: false });
     }
     return results;
@@ -325,17 +347,18 @@ export function createRanking({ client, store, roblox, access }) {
     await interaction.deferUpdate();
     const names = await roblox.usernames([userId]);
     const target = { id: userId, name: names.get(userId) || userId };
-    const by = `<@${interaction.user.id}> (${actor.name}, ${role.name})`;
+    const by = { discordId: interaction.user.id, robloxName: actor.name, authority: role.name };
+    const byText = `<@${interaction.user.id}> (${actor.name}, ${role.name})`;
     if (action === 'approve') {
       const result = await roblox.setRank(group.groupId, userId, value.to);
       store.data.meritBase[`${groupKey}:${userId}`] = value.merit;
-      await logChange({ group, target, from: result.before, to: result.rank, by, reason: 'Approved promotion request', color: COLORS.good, promotion: true });
+      await logChange({ group, target, kind: 'promotion', from: result.before, to: result.rank, by, reason: 'Approved promotion request' });
     }
     store.data.promotionRequests[key] = { ...value, open: false, result: action, by: interaction.user.id };
     store.save();
     const embed = EmbedBuilder.from(interaction.message.embeds[0])
       .setColor(action === 'approve' ? COLORS.good : COLORS.bad)
-      .addFields({ name: action === 'approve' ? 'Approved by' : 'Denied by', value: by });
+      .addFields({ name: action === 'approve' ? 'Approved by' : 'Denied by', value: byText });
     await interaction.editReply({ embeds: [embed], components: [] });
   }
 

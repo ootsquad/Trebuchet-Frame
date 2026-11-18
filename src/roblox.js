@@ -79,6 +79,16 @@ export class RobloxService {
     return parseResponse(await fetch(`https://users.roblox.com/v1/users/${robloxUserId}`));
   }
 
+  async groupIconUrl(groupId) {
+    this.iconCache ??= new Map();
+    if (this.iconCache.has(String(groupId))) return this.iconCache.get(String(groupId));
+    const body = await parseResponse(await fetch(`https://thumbnails.roblox.com/v1/groups/icons?groupIds=${groupId}&size=150x150&format=Png&isCircular=false`));
+    const entry = body?.data?.[0];
+    const url = entry?.state === 'Completed' ? entry.imageUrl : null;
+    if (url) this.iconCache.set(String(groupId), url);
+    return url;
+  }
+
   async headshotUrl(robloxUserId) {
     const body = await parseResponse(await fetch(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${robloxUserId}&size=150x150&format=Png&isCircular=false`));
     const entry = body?.data?.[0];
