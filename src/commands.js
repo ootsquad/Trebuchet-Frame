@@ -108,6 +108,11 @@ export const commandData = [
 // Registered for every server the bot is in (each division can add it).
 export async function registerCommands(client) {
   await client.application.commands.set(commandData);
+  // Old per-server commands (from the previous bot) would show next to these with outdated options. Clear them.
+  for (const guild of client.guilds.cache.values()) {
+    const old = await guild.commands.fetch().catch(() => null);
+    if (old?.size) await guild.commands.set([]).catch((error) => console.error(`[Clearing old commands in ${guild.name}]`, error));
+  }
 }
 
 const isStaff = (member) => member?.permissions?.has(PermissionFlagsBits.ManageGuild) ||
