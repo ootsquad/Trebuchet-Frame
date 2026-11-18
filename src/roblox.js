@@ -74,6 +74,17 @@ export class RobloxService {
     return found;
   }
 
+  // Public profile: name, display name, description and the date the account was made.
+  async getProfile(robloxUserId) {
+    return parseResponse(await fetch(`https://users.roblox.com/v1/users/${robloxUserId}`));
+  }
+
+  async headshotUrl(robloxUserId) {
+    const body = await parseResponse(await fetch(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${robloxUserId}&size=150x150&format=Png&isCircular=false`));
+    const entry = body?.data?.[0];
+    return entry?.state === 'Completed' ? entry.imageUrl : null;
+  }
+
   async usernames(ids) {
     const names = new Map();
     for (let index = 0; index < ids.length; index += 100) {

@@ -23,17 +23,18 @@ async function reportError(_client, context, error) {
   console.error(`[${context}]`, error);
 }
 
+// [key, short label for staff, the question]
 const knowledgeQuestions = [
-  ['coleProtocol', 'What is the Cole Protocol, and why was it implemented?'],
-  ['covenantSpecies', 'Name the actual species that make up the Covenant.'],
-  ['monitors', 'What are Monitors in Halo lore, and what is their function?'],
-  ['reach', 'How was Reach important to Humanity’s military and resources?'],
-  ['mjolnir', 'What name is given to the armored exoskeleton worn by Spartans?'],
-  ['spartanIIs', "What were Spartan II's originally made to do?"],
-  ['harvest', 'What is the significance of the planet Harvest?'],
-  ['earthDiscovery', 'How did the Covenant originally discover Earth?'],
-  ['permadeath', 'Do you understand perma-death and agree to abide by the rules for it?'],
-  ['loreDriven', 'Do you understand this community is heavily lore-driven and game events can change based on the results of lore events?']
+  ['coleProtocol', 'Cole Protocol', 'What is the Cole Protocol, and why was it implemented?'],
+  ['covenantSpecies', 'Covenant species', 'Name the actual species that make up the Covenant.'],
+  ['monitors', 'Monitors', 'What are Monitors in Halo lore, and what is their function?'],
+  ['reach', 'Reach', 'How was Reach important to Humanity’s military and resources?'],
+  ['mjolnir', 'Spartan armor', 'What name is given to the armored exoskeleton worn by Spartans?'],
+  ['spartanIIs', 'Spartan IIs', "What were Spartan II's originally made to do?"],
+  ['harvest', 'Harvest', 'What is the significance of the planet Harvest?'],
+  ['earthDiscovery', 'Finding Earth', 'How did the Covenant originally discover Earth?'],
+  ['permadeath', 'Perma-death', 'Do you understand perma-death and agree to abide by the rules for it?'],
+  ['loreDriven', 'Lore-driven', 'Do you understand this community is heavily lore-driven and game events can change based on the results of lore events?']
 ];
 
 const activeApplicants = new Set();
@@ -110,54 +111,84 @@ function buildDecisionRow(discordUserId, robloxUserId, disabled = false) {
   );
 }
 
-function buildApplicationEmbeds({ member, robloxUser, age, knowledge, agreements, robloxRoles }) {
-  const roleText = robloxRoles.length ? robloxRoles.join(', ') : 'No group membership detected';
+const STATUS = {
+  PENDING: { color: 0xfee75c, label: '🟡 Pending review' },
+  APPROVED: { color: 0x57f287, label: '🟢 Approved' },
+  DENIED: { color: 0xed4245, label: '🔴 Denied' }
+};
 
-  const first = new EmbedBuilder()
-    .setTitle('Wave Application: PENDING')
-    .setColor(0xFEE75C)
-    .addFields(
-      { name: 'Roblox Username / UserID', value: `${trim(robloxUser.name, 200)} / ${robloxUser.id}` },
-      { name: 'Account ownership', value: '✅ Verified with a phrase in their Roblox profile' },
-      { name: 'Discord Username / Discord UserID', value: `${trim(member.user.tag, 200)} / ${member.id}` },
-      { name: 'User Age', value: trim(age, 100), inline: true },
-      { name: 'Current Roblox Group Role(s)', value: trim(roleText, 500), inline: true }
-    )
-    .setFooter({ text: `WAVE|${member.id}|${robloxUser.id}|PENDING` })
-    .setTimestamp();
-
-  const second = new EmbedBuilder()
-    .setTitle('User Knowledge Section 1/2')
-    .setColor(0x5865F2)
-    .addFields(
-      ...knowledgeQuestions.slice(0, 5).map(([key, question]) => ({ name: question, value: trim(knowledge[key]) }))
-    );
-
-  const third = new EmbedBuilder()
-    .setTitle('User Knowledge Section 2/2')
-    .setColor(0x5865F2)
-    .addFields(
-      ...knowledgeQuestions.slice(5).map(([key, question]) => ({ name: question, value: trim(knowledge[key]) }))
-    );
-
-  const fourth = new EmbedBuilder()
-    .setTitle('Agreement Section')
-    .setColor(0x5865F2)
-    .addFields(
-      { name: 'Discord Terms of Service', value: agreements.discordTerms ? '✅ Agreed' : '❌ Did not agree' },
-      { name: 'Discord Privacy Policy', value: agreements.discordPrivacy ? '✅ Agreed' : '❌ Did not agree' },
-      { name: 'Roblox Terms of Use', value: agreements.robloxTerms ? '✅ Agreed' : '❌ Did not agree' },
-      { name: `${CONFIG.brandName} Community Rules`, value: agreements.communityRules ? '✅ Agreed' : '❌ Did not agree' }
-    );
-
-  return [first, second, third, fourth];
+// The application's data rides in the title link (the Roblox profile), so nothing technical shows on the card.
+function applicationUrl({ robloxUserId, discordUserId, status, agreed }) {
+  return `https://www.roblox.com/users/${robloxUserId}/profile?wave=${discordUserId}&status=${status}&agreed=${agreed ? 1 : 0}`;
 }
 
-function parseFooter(message) {
-  const footer = message.embeds?.[0]?.footer?.text || '';
-  const match = /^WAVE\|(\d+)\|(\d+)\|([A-Z_]+)$/.exec(footer);
+function parseApplication(message) {
+  const embed = message.embeds?.[0];
+  try {
+    const url = new URL(embed?.url || '');
+    const robloxUserId = url.pathname.split('/')[2];
+    const discordUserId = url.searchParams.get('wave');
+    if (robloxUserId && discordUserId) {
+      return { discordUserId, robloxUserId, status: url.searchParams.get('status') || 'PENDING', agreed: url.searchParams.get('agreed') === '1' };
+    }
+  } catch {}
+  // Applications posted before the new layout kept the data in the footer.
+  const match = /^WAVE\|(\d+)\|(\d+)\|([A-Z_]+)$/.exec(embed?.footer?.text || '');
   if (!match) return null;
-  return { discordUserId: match[1], robloxUserId: match[2], status: match[3] };
+  const agreementEmbed = message.embeds.find((item) => item.title === 'Agreement Section');
+  const agreed = Boolean(agreementEmbed?.fields?.every((field) => String(field.value || '').startsWith('✅')));
+  return { discordUserId: match[1], robloxUserId: match[2], status: match[3], agreed };
+}
+
+function accountAge(created) {
+  if (!created) return 'Unknown';
+  const date = new Date(created);
+  const days = Math.floor((Date.now() - date.getTime()) / 86_400_000);
+  const span = days >= 365 ? `${Math.floor(days / 365)} yr` : days >= 30 ? `${Math.floor(days / 30)} mo` : `${days} days`;
+  return `<t:${Math.floor(date.getTime() / 1000)}:D>\n${days < 30 ? '⚠️ ' : ''}${span} old`;
+}
+
+function buildApplicationEmbeds({ member, robloxUser, age, knowledge, agreements, unscRank, profile, headshot }) {
+  const agreedCount = Object.values(agreements).filter(Boolean).length;
+  const agreed = agreedCount === 4;
+  const missing = [
+    ['discordTerms', 'Discord Terms'], ['discordPrivacy', 'Discord Privacy'], ['robloxTerms', 'Roblox Terms'], ['communityRules', 'Community rules']
+  ].filter(([key]) => !agreements[key]).map(([, name]) => name);
+  const answers = knowledgeQuestions.map(([key]) => String(knowledge[key] || '').trim().toLowerCase());
+  const sameAnswers = answers.length - new Set(answers).size;
+
+  const summary = new EmbedBuilder()
+    .setColor(STATUS.PENDING.color)
+    .setAuthor({ name: `Wave Application · ${STATUS.PENDING.label}`, iconURL: member.user.displayAvatarURL() })
+    .setTitle(robloxUser.name)
+    .setURL(applicationUrl({ robloxUserId: robloxUser.id, discordUserId: member.id, status: 'PENDING', agreed }))
+    .setDescription(`<@${member.id}> applied with this Roblox account.`)
+    .addFields(
+      { name: 'Roblox', value: `${trim(robloxUser.name, 100)}\nID ${robloxUser.id}`, inline: true },
+      { name: 'Discord', value: `${trim(member.user.username, 100)}\nID ${member.id}`, inline: true },
+      { name: 'Age', value: trim(age, 20), inline: true },
+      { name: 'Ownership', value: '✅ Verified', inline: true },
+      { name: 'Agreements', value: agreed ? '✅ 4 of 4' : `❌ ${agreedCount} of 4\nMissing: ${missing.join(', ')}`, inline: true },
+      { name: 'Roblox joined', value: accountAge(profile?.created), inline: true },
+      { name: 'UNSC group', value: unscRank ? unscRank : '⚠️ Not in the group yet. Approval will fail until they join.' }
+    )
+    .setFooter({ text: 'Submitted' })
+    .setTimestamp();
+  if (headshot) summary.setThumbnail(headshot);
+  if (sameAnswers >= 3) {
+    const different = answers.length - sameAnswers;
+    summary.addFields({ name: 'Heads up', value: different === 1 ? '⚠️ Every knowledge answer is the same text.' : `⚠️ Only ${different} different answers out of ${answers.length}.` });
+  }
+
+  const answersEmbed = new EmbedBuilder()
+    .setColor(0x2b2d31)
+    .setTitle('Knowledge answers')
+    .addFields(knowledgeQuestions.map(([key, label, question], index) => ({
+      name: `${index + 1}. ${label}`,
+      value: `-# ${trim(question, 140)}\n> ${trim(knowledge[key], 330).replace(/\n/g, '\n> ')}`
+    })));
+
+  return [summary, answersEmbed];
 }
 
 function moderatorAllowed(member) {
@@ -165,19 +196,16 @@ function moderatorAllowed(member) {
 }
 
 async function updateApplicationStatus(message, { status, moderator, note = null }) {
-  const parsed = parseFooter(message);
+  const parsed = parseApplication(message);
   if (!parsed) return;
-
-  const color = status === 'APPROVED' ? 0x57F287 : status === 'DENIED' ? 0xED4245 : 0xFEE75C;
-  const first = EmbedBuilder.from(message.embeds[0])
-    .setTitle(`Wave Application: ${status}`)
-    .setColor(color)
-    .setFooter({ text: `WAVE|${parsed.discordUserId}|${parsed.robloxUserId}|${status}` });
-
-  if (moderator) {
-    first.addFields({ name: 'Reviewed By', value: `${moderator.user.tag} (${moderator.id})` });
-  }
-  if (note) first.addFields({ name: 'Review Note', value: trim(note, 900) });
+  const look = STATUS[status] || STATUS.PENDING;
+  const old = message.embeds[0];
+  const first = EmbedBuilder.from(old)
+    .setColor(look.color)
+    .setAuthor({ name: `Wave Application · ${look.label}`, iconURL: old.author?.iconURL || undefined })
+    .setURL(applicationUrl({ ...parsed, status }));
+  if (moderator) first.addFields({ name: 'Reviewed by', value: `<@${moderator.id}> <t:${Math.floor(Date.now() / 1000)}:R>`, inline: true });
+  if (note) first.addFields({ name: 'Result', value: trim(note, 900) });
 
   const remaining = message.embeds.slice(1).map((embed) => EmbedBuilder.from(embed));
   await message.edit({ embeds: [first, ...remaining], components: [buildDecisionRow(parsed.discordUserId, parsed.robloxUserId, true)] });
@@ -254,7 +282,7 @@ export function createApplicationService({ client, roblox, store }) {
 
       const knowledge = {};
       for (let index = 0; index < knowledgeQuestions.length; index += 1) {
-        const [key, question] = knowledgeQuestions[index];
+        const [key, , question] = knowledgeQuestions[index];
         const minWords = index < 8 ? 5 : 2;
         const response = await ask(dm, member.id, { embeds: [card({
           section: SECTION,
@@ -285,8 +313,12 @@ export function createApplicationService({ client, roblox, store }) {
         agreements[key] = pressed === 'wavedm:yes';
       }
 
-      let robloxRoles = [];
-      try { const unscRank = await roblox.getRank(CONFIG.groups.unsc, robloxUser.id); robloxRoles = unscRank ? [`UNSC: ${unscRank}`] : []; } catch (error) { await reportError(client, 'Checking applicant Roblox membership', error); }
+      let unscRank = null;
+      try { unscRank = await roblox.getRank(CONFIG.groups.unsc, robloxUser.id); } catch (error) { await reportError(client, 'Checking applicant Roblox membership', error); }
+      const [profile, headshot] = await Promise.all([
+        roblox.getProfile(robloxUser.id).catch(() => null),
+        roblox.headshotUrl(robloxUser.id).catch(() => null)
+      ]);
 
       const embeds = buildApplicationEmbeds({
         member,
@@ -294,12 +326,14 @@ export function createApplicationService({ client, roblox, store }) {
         age: ageAnswer.answer,
         knowledge,
         agreements,
-        robloxRoles
+        unscRank,
+        profile,
+        headshot
       });
 
       const channel = await getTextChannel(client, CONFIG.channels.waveApplications);
       const application = await channel.send({
-        content: `<@&${CONFIG.roles.waveModerator}> New wave application from <@${member.id}>. Use the buttons below to approve or deny.`,
+        content: `<@&${CONFIG.roles.waveModerator}> New wave application from <@${member.id}>`,
         embeds,
         components: [buildDecisionRow(member.id, robloxUser.id)],
         allowedMentions: { roles: [CONFIG.roles.waveModerator], users: [member.id] }
@@ -334,7 +368,7 @@ export function createApplicationService({ client, roblox, store }) {
       return;
     }
 
-    const parsed = parseFooter(message);
+    const parsed = parseApplication(message);
     if (!parsed || parsed.status !== 'PENDING') {
       if (interaction) await interaction.reply({ content: 'This application has already been reviewed.', flags: MessageFlags.Ephemeral });
       return;
@@ -345,9 +379,7 @@ export function createApplicationService({ client, roblox, store }) {
       if (action === 'approve') {
         if (interaction) await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-        const agreementEmbed = message.embeds.find((embed) => embed.title === 'Agreement Section');
-        const agreementsAccepted = agreementEmbed?.fields?.every((field) => String(field.value || '').startsWith('✅'));
-        if (!agreementsAccepted) {
+        if (!parsed.agreed) {
           throw new Error('This applicant did not accept every required agreement. Have them submit a new application before approving.');
         }
 
