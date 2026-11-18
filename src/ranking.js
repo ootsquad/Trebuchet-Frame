@@ -70,7 +70,7 @@ export function createRanking({ client, store, roblox, access }) {
   // fixedGroup: /license always works on the vehicle certification group.
   // Checks a target before ranking: in the group, and below the manager. Returns their current role.
   async function checkTarget(group, role, actor, target) {
-    if (target.id === actor.id && role.name !== 'Super admin') throw new Error('You cannot change your own rank.');
+    if (target.id === actor.id && role.name !== 'Full Access') throw new Error('You cannot change your own rank.');
     const current = (await roblox.getRoles(group.groupId, target.id))[0];
     if (!current) throw new Error(`${target.name} is not in ${group.short}. Check their join request first.`);
     if (current.rank >= role.rank) throw new Error(`${target.name} is ${current.name}, which is not below your rank. You cannot change them.`);

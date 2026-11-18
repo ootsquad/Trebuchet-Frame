@@ -3,8 +3,8 @@
 import { CONFIG } from './config.js';
 import { GROUPS, groupByKey, isManagerRank } from './groups.js';
 
-// Super admins act as if they held the top rank the bot can work with in every group.
-const SUPER_ROLE = Object.freeze({ name: 'Super admin', rank: 200 });
+// Full Access accounts act as if they held the top rank the bot can work with in every group.
+const SUPER_ROLE = Object.freeze({ name: 'Full Access', rank: 200 });
 
 export function createAccess({ roblox, store }) {
   const cache = new Map(); // `${groupId}:${userId}` -> { at, roles }
