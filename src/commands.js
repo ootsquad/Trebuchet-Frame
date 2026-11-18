@@ -69,9 +69,9 @@ export const commandData = [
   new SlashCommandBuilder()
     .setName('rank')
     .setDescription('Change a rank in a group you command. You only see your own groups and ranks below yours.')
-    .addStringOption((o) => o.setName('group').setDescription('A group you manage').setRequired(true).setAutocomplete(true))
     .addStringOption((o) => o.setName('roblox_user').setDescription('Roblox username or user ID').setRequired(true))
-    .addStringOption((o) => o.setName('new_rank').setDescription('The new rank').setRequired(true).setAutocomplete(true))
+    .addStringOption((o) => o.setName('new_rank').setDescription('The new rank. Each shows its group, like ODST › ODST Fireteam Leader').setRequired(true).setAutocomplete(true))
+    .addStringOption((o) => o.setName('group').setDescription('Optional: only show ranks from this group').setAutocomplete(true))
     .addStringOption((o) => o.setName('reason').setDescription('Shown in the rank log').setMaxLength(500)),
 
   new SlashCommandBuilder()

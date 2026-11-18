@@ -71,6 +71,14 @@ test('an XO cannot rank someone at their level, and cannot hand out XO', async (
   await assert.rejects(ranking.rankCommand(interaction('d2', { group: 'odst', roblox_user: 'trooper', new_rank: 'ODST Executive Officer' })), /not a rank you can give/);
 });
 
+test('a rank picked from the list carries its group', async () => {
+  const { ranking } = setup();
+  members.set('3', 'r10');
+  const reply = interaction('d2', { roblox_user: 'trooper', new_rank: 'odst::ODST Lance Corporal' });
+  await ranking.rankCommand(reply);
+  assert.equal(members.get('3'), 'r20');
+});
+
 test('unlinked users manage nothing', async () => {
   const { ranking } = setup();
   await assert.rejects(ranking.rankCommand(interaction('nobody', { group: 'odst', roblox_user: 'trooper', new_rank: 'ODST Lance Corporal' })), /Link and verify/);

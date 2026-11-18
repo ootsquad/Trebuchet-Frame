@@ -71,13 +71,18 @@ export function createRanking({ client, store, roblox, access }) {
   // fixedGroup: /license always works on the vehicle certification group.
   async function rankCommand(interaction, fixedGroup = null) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    const { actor, group, role } = await access.requireManager(interaction.user.id, fixedGroup || interaction.options.getString('group', true));
+    // A rank picked from the list carries its group: "odst::ODST Fireteam Leader".
+    const picked = String(interaction.options.getString('new_rank', true));
+    const [pickedGroup, pickedRank] = picked.includes('::') ? picked.split('::') : [null, picked];
+    const groupKey = fixedGroup || interaction.options.getString('group') || pickedGroup;
+    if (!groupKey) throw new Error('Pick the rank from the list, or choose a group first.');
+    const { actor, group, role } = await access.requireManager(interaction.user.id, groupKey);
     const target = await roblox.resolveUser(interaction.options.getString('roblox_user', true));
     if (target.id === actor.id) throw new Error('You cannot change your own rank.');
     const current = (await roblox.getRoles(group.groupId, target.id))[0];
     if (!current) throw new Error(`${target.name} is not in ${group.short}. Check /pending if they asked to join.`);
     if (current.rank >= role.rank) throw new Error(`${target.name} is ${current.name}, which is not below your rank. You cannot change them.`);
-    const wanted = interaction.options.getString('new_rank', true);
+    const wanted = pickedRank;
     const allowed = await access.assignableRanks(group, role);
     const rank = allowed.find((entry) => same(entry.name, wanted));
     if (!rank) throw new Error(`"${wanted}" is not a rank you can give in ${group.short}. Pick one from the list.`);
@@ -116,14 +121,21 @@ export function createRanking({ client, store, roblox, access }) {
           .map(({ group, role }) => ({ name: `${group.short} (you: ${role.name})`.slice(0, 100), value: group.key })));
         return;
       }
+      // Ranks, each labelled with its group: "ODST  ›  ODST Fireteam Leader". Only groups you command, and only
+      // ranks below yours. With a group already chosen, only that group.
       const groupKey = interaction.commandName === 'license' ? 'vehicles' : interaction.options.getString('group');
-      if (!groupKey) return interaction.respond([]);
-      const { group, role } = await access.requireManager(interaction.user.id, groupKey);
-      const ranks = await access.assignableRanks(group, role);
-      await interaction.respond(ranks
-        .filter((rank) => !typed || rank.name.toLowerCase().includes(typed))
-        .slice(0, 25)
-        .map((rank) => ({ name: rank.name.slice(0, 100), value: rank.name.slice(0, 100) })));
+      const sources = groupKey
+        ? [await access.requireManager(interaction.user.id, groupKey)]
+        : await access.managedGroups(interaction.user.id);
+      const choices = [];
+      for (const { group, role } of sources) {
+        for (const rank of await access.assignableRanks(group, role)) {
+          const label = `${group.short}  ›  ${rank.name}`;
+          if (typed && !label.toLowerCase().includes(typed)) continue;
+          choices.push({ name: label.slice(0, 100), value: `${group.key}::${rank.name}`.slice(0, 100) });
+        }
+      }
+      await interaction.respond(choices.slice(0, 25));
     } catch {
       await interaction.respond([]).catch(() => {});
     }
