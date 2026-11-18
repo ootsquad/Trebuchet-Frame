@@ -17,7 +17,7 @@ export const GROUPS = Object.freeze([
     managers: [] // only the Waved role, through wave applications and /unwave
   },
   {
-    key: 'unsc', name: 'United Nations Space Command', short: 'UNSC', groupId: CONFIG.groups.unsc, kind: 'unsc',
+    key: 'unsc', name: 'United Nations Space Command', short: 'United Nations Space Command', groupId: CONFIG.groups.unsc, kind: 'unsc',
     managers: ['De Facto Leader', 'Secretary-General', 'UNSC Security Council', 'Naval Command', 'Unified Ground Command', 'Marine Corps Command']
   },
   {
@@ -26,27 +26,27 @@ export const GROUPS = Object.freeze([
     managers: []
   },
   {
-    key: 'odst', name: 'UNSC Orbital Drop Shock Trooper', short: 'ODST', groupId: CONFIG.groups.divisions.odst, kind: 'division',
+    key: 'odst', name: 'UNSC Orbital Drop Shock Trooper', short: 'Orbital Drop Shock Trooper', groupId: CONFIG.groups.divisions.odst, kind: 'division',
     managers: DIVISION_MANAGERS, managerPattern: OFFICERS, marineRank: '105th Orbital Drop Shock Troopers', unscRank: 'Special Operations Personnel',
     earnable: 6, approval: 7 // up to ODST Fireteam | Alpha by merit; Fireteam Leader needs the CO or XO
   },
   {
-    key: 'mid', name: 'UNSC 1st Marine Infantry Division', short: '1st MID', groupId: CONFIG.groups.divisions.mid, kind: 'division',
+    key: 'mid', name: 'UNSC 1st Marine Infantry Division', short: '1st Marine Infantry Division', groupId: CONFIG.groups.divisions.mid, kind: 'division',
     managers: DIVISION_MANAGERS, managerPattern: OFFICERS, marineRank: '1st Marine Infantry Division', unscRank: 'Enlisted Marine Personnel',
     earnable: 6 // up to Sergeant Major by merit
   },
   {
-    key: 'mfr', name: 'UNSC 3rd Marine Force Reconnaissance', short: '3rd MFR', groupId: CONFIG.groups.divisions.mfr, kind: 'division',
+    key: 'mfr', name: 'UNSC 3rd Marine Force Reconnaissance', short: '3rd Marine Force Reconnaissance', groupId: CONFIG.groups.divisions.mfr, kind: 'division',
     managers: DIVISION_MANAGERS, managerPattern: OFFICERS, marineRank: '3rd Marine Force Reconnaissance', unscRank: 'Enlisted Marine Personnel',
     earnable: 6 // up to Sergeant Major by merit
   },
   {
-    key: 'aar', name: 'UNSC 75th Armored Assault Regiment', short: '75th AAR', groupId: CONFIG.groups.divisions.aar, kind: 'division',
+    key: 'aar', name: 'UNSC 75th Armored Assault Regiment', short: '75th Armored Assault Regiment', groupId: CONFIG.groups.divisions.aar, kind: 'division',
     managers: DIVISION_MANAGERS, managerPattern: OFFICERS, marineRank: '75th Armored Assault Regiment', unscRank: 'Enlisted Marine Personnel',
     earnable: 6 // up to Sergeant Major by merit
   },
   {
-    key: 'mcsb', name: 'UNSC 7th Marine Combat Support Battalion', short: '7th MCSB', groupId: CONFIG.groups.divisions.mcsb, kind: 'division',
+    key: 'mcsb', name: 'UNSC 7th Marine Combat Support Battalion', short: '7th Marine Combat Support Battalion', groupId: CONFIG.groups.divisions.mcsb, kind: 'division',
     managers: DIVISION_MANAGERS, managerPattern: OFFICERS, marineRank: '7th Marine Combat Support Battalion', unscRank: 'Enlisted Marine Personnel',
     earnable: 6 // up to Sergeant Major by merit
   },
@@ -59,7 +59,7 @@ export const GROUPS = Object.freeze([
     managerPattern: OFFICERS
   },
   {
-    key: 'vehicles', name: 'Office of Vehicle & Flight Certification', short: 'Vehicle Certification', groupId: CONFIG.groups.vehicles, kind: 'vehicles',
+    key: 'vehicles', name: 'Office of Vehicle & Flight Certification', short: 'Office of Vehicle & Flight Certification', groupId: CONFIG.groups.vehicles, kind: 'vehicles',
     managers: ['Certification Officer', 'Director of Operational Standards', 'Materials Group Liaison Officer', 'Secretary General', 'De-Facto Leader']
   }
 ].filter((group) => group.groupId));
