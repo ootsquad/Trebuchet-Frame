@@ -79,6 +79,16 @@ test('a rank picked from the list carries its group', async () => {
   assert.equal(members.get('3'), 'r20');
 });
 
+test('super admins manage every group, including the Marine Corps', async () => {
+  const { access, store } = setup();
+  store.link('dx', { id: '497730291', name: 'xaiver' });
+  const keys = (await access.managedGroups('dx')).map((m) => m.group.key);
+  assert.ok(keys.includes('marines') && keys.includes('unsc') && keys.includes('odst') && keys.includes('vehicles'));
+  assert.ok(!keys.includes('project'));
+  const { role } = await access.requireManager('dx', 'odst');
+  assert.equal(role.rank, 200);
+});
+
 test('unlinked users manage nothing', async () => {
   const { ranking } = setup();
   await assert.rejects(ranking.rankCommand(interaction('nobody', { group: 'odst', roblox_user: 'trooper', new_rank: 'ODST Lance Corporal' })), /Link and verify/);

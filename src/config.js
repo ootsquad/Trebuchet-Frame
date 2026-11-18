@@ -102,6 +102,9 @@ export const CONFIG = Object.freeze({
     topic: 'TrebuchetBlacklist'
   }),
 
+  // Roblox user IDs that may manage every rank in every group (xaiver, sepernts).
+  superAdmins: env('SUPER_ADMIN_IDS', '497730291,25698705').split(',').map((id) => id.trim()).filter(Boolean),
+
   rankPanel: env('CHANNEL_RANK_PANEL', '1572500360214483026'),
 
   ranking: Object.freeze({
