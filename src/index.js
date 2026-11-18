@@ -48,7 +48,7 @@ const panel = createRankPanel({ client, store, roblox, access, ranking });
 const schedule = createSchedule({ client, store, events });
 events.hooks.logged = schedule.markLogged;
 const leaderboards = createLeaderboards({ client, store, roblox });
-const status = createStatus({ client, roblox });
+const status = createStatus({ client, roblox, store });
 
 client.once(Events.ClientReady, async (ready) => {
   console.log(`Discord connected as ${ready.user.tag}`);

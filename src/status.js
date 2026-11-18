@@ -1,59 +1,124 @@
 // Server status: one card in the server status channel, updated every minute. Running game servers report
 // themselves through the data store TrebuchetStatus (the game's StatusService); the totals come from Roblox.
-import { ButtonBuilder, ButtonStyle, ActionRowBuilder, EmbedBuilder } from 'discord.js';
+// The bot also keeps a small history: hourly player peaks for the activity graph, today's peak, and when a
+// server was last running.
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
 import { CONFIG } from './config.js';
-import { COLORS } from './ui.js';
 
 const TAG = 'Server Status';
-const hourText = (hour) => {
-  const value = Number(hour) || 0;
-  const h = Math.floor(value);
-  const m = Math.round((value - h) * 60) % 60;
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+const HISTORY_HOURS = 24;
+const BLOCKS = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+const WEATHER = {
+  Clear: '☀️ Clear', Cloudy: '☁️ Cloudy', Overcast: '☁️ Overcast', Rain: '🌧️ Rain', HeavyRain: '🌧️ Heavy rain',
+  FoggyRain: '🌫️ Foggy rain', Thunderstorm: '⛈️ Storm', Storm: '⛈️ Storm', Snow: '🌨️ Snow', Blizzard: '❄️ Blizzard',
+  Fog: '🌫️ Fog', Windy: '💨 Windy', BloodMoon: '🩸 Blood moon'
 };
-const phase = (hour) => (hour >= 6.5 && hour < 18 ? '☀️' : hour >= 18 && hour < 19.5 ? '🌇' : hour >= 5 && hour < 6.5 ? '🌅' : '🌙');
-const WEATHER = { Clear: '☀️ Clear', Cloudy: '☁️ Cloudy', Rain: '🌧️ Rain', HeavyRain: '🌧️ Heavy rain', FoggyRain: '🌫️ Foggy rain', Thunderstorm: '⛈️ Thunderstorm', Snow: '🌨️ Snow', Blizzard: '❄️ Blizzard', Fog: '🌫️ Fog', Windy: '💨 Windy' };
 
-export function createStatus({ client, roblox }) {
+const pad = (value) => String(value).padStart(2, '0');
+const clock = (hour) => {
+  const value = Number(hour) || 0;
+  const h = Math.floor(value) % 24;
+  return `${pad(h)}:${pad(Math.floor((value - Math.floor(value)) * 60))}`;
+};
+const sky = (hour) => (hour >= 6.5 && hour < 18 ? '☀️' : hour >= 18 && hour < 19.5 ? '🌇' : hour >= 5 && hour < 6.5 ? '🌅' : '🌙');
+const bar = (count, max, width = 10) => {
+  const filled = max > 0 ? Math.min(width, Math.round((count / max) * width)) : 0;
+  return '▰'.repeat(filled) + '▱'.repeat(width - filled);
+};
+const duration = (minutes) => (minutes >= 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60}m` : `${minutes}m`);
+const compact = (value) => Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(Number(value) || 0);
+const dayKey = (date = new Date()) => date.toLocaleDateString('en-CA', { timeZone: CONFIG.timeZone });
+
+// A one-line graph of the last 24 hours, oldest on the left.
+export function sparkline(history, nowHour, hours = HISTORY_HOURS) {
+  const byHour = new Map(history.map((entry) => [entry.hour, entry.max]));
+  const values = Array.from({ length: hours }, (_, index) => byHour.get(nowHour - hours + 1 + index) || 0);
+  const peak = Math.max(...values);
+  const line = values.map((value) => (peak === 0 ? BLOCKS[0] : BLOCKS[Math.min(7, Math.round((value / peak) * 7))])).join('');
+  return { line, peak };
+}
+
+export function createStatus({ client, roblox, store }) {
   let message = null;
+  let art = { icon: null, thumbnail: null, at: 0 };
+  store.data.status ??= { history: [], peak: { day: null, count: 0 }, lastOnline: null };
+  const memory = store.data.status;
+
+  function remember(online, now) {
+    const hour = Math.floor(now / 3600_000);
+    const last = memory.history.at(-1);
+    if (last?.hour === hour) last.max = Math.max(last.max, online);
+    else memory.history.push({ hour, max: online });
+    memory.history = memory.history.filter((entry) => entry.hour > hour - HISTORY_HOURS);
+    const today = dayKey(new Date(now));
+    if (memory.peak.day !== today) memory.peak = { day: today, count: 0 };
+    memory.peak.count = Math.max(memory.peak.count, online);
+    if (online > 0) memory.lastOnline = now;
+    store.save();
+    return hour;
+  }
 
   async function card() {
+    const now = Date.now();
+    if (now - art.at > 6 * 3600_000) art = { ...(await roblox.gameArt().catch(() => ({ icon: null, thumbnail: null }))), at: now };
     const [info, entry] = await Promise.all([
       roblox.universeInfo().catch(() => null),
       roblox.getEntry('servers', 'TrebuchetStatus').catch(() => ({ value: null }))
     ]);
-    const now = Math.floor(Date.now() / 1000);
+    const seconds = Math.floor(now / 1000);
     const servers = Object.entries(entry.value || {})
       .map(([id, server]) => ({ id, ...server }))
-      .filter((server) => now - (Number(server.Updated) || 0) < 180)
+      .filter((server) => seconds - (Number(server.Updated) || 0) < 180)
       .sort((a, b) => (b.Players || 0) - (a.Players || 0));
     const reported = servers.reduce((sum, server) => sum + (Number(server.Players) || 0), 0);
     const online = Math.max(info?.playing || 0, reported);
     const up = online > 0 || servers.length > 0;
+    const hour = remember(online, now);
+    const graph = sparkline(memory.history, hour);
+    const placeId = info?.rootPlaceId;
+    const gameUrl = placeId ? `https://www.roblox.com/games/${placeId}` : null;
+
+    const headline = up
+      ? `### 🟢  Online\n**${online}** ${online === 1 ? 'player' : 'players'} across **${servers.length || 1}** ${servers.length === 1 ? 'server' : 'servers'}`
+      : `### ⚫  Offline\nNo servers are running right now.${memory.lastOnline ? `\nLast player online <t:${Math.floor(memory.lastOnline / 1000)}:R>.` : ''}`;
 
     const embed = new EmbedBuilder()
-      .setColor(up ? COLORS.good : 0x4f545c)
-      .setAuthor({ name: `${CONFIG.brandName} · ${TAG}` })
-      .setTitle(up ? '🟢  Online' : '⚫  No servers running')
+      .setColor(up ? 0x3ba55d : 0x2b2d31)
+      .setAuthor({ name: TAG, iconURL: art.icon || undefined })
+      .setTitle(info?.name || CONFIG.brandName)
+      .setDescription(`${headline}\n-# Updated <t:${seconds}:R>`)
       .addFields(
-        { name: 'Players', value: `**${online}**`, inline: true },
-        { name: 'Servers', value: `**${servers.length || (online ? '1+' : 0)}**`, inline: true },
-        { name: 'Visits', value: info ? `**${Number(info.visits || 0).toLocaleString()}**` : 'Unknown', inline: true }
+        { name: 'Players', value: `\`${online}\``, inline: true },
+        { name: 'Peak today', value: `\`${memory.peak.count}\``, inline: true },
+        { name: 'Servers', value: `\`${servers.length}\``, inline: true },
+        { name: 'Visits', value: `\`${compact(info?.visits)}\``, inline: true },
+        { name: 'Favorites', value: `\`${compact(info?.favorites)}\``, inline: true },
+        { name: 'Last update', value: info?.updated ? `<t:${Math.floor(Date.parse(info.updated) / 1000)}:R>` : '`Unknown`', inline: true }
       );
+    if (gameUrl) embed.setURL(gameUrl);
+
     if (servers.length) {
       embed.addFields({
-        name: 'Servers',
-        value: servers.slice(0, 10).map((server, index) => {
-          const uptime = Math.max(0, Math.floor((now - (Number(server.Started) || now)) / 60));
-          return `**${index + 1}.** ${server.Players}/${server.Max} players  ·  ${phase(server.Hour)} ${hourText(server.Hour)}  ·  ${WEATHER[server.Weather] || server.Weather}${server.Private ? '  ·  🔒 private' : ''}\n-# up ${uptime >= 60 ? `${Math.floor(uptime / 60)}h ${uptime % 60}m` : `${uptime}m`}`;
+        name: 'Live servers',
+        value: servers.slice(0, 8).map((server, index) => {
+          const uptime = Math.max(0, Math.floor((seconds - (Number(server.Started) || seconds)) / 60));
+          const max = Number(server.Max) || info?.maxPlayers || 0;
+          return `**Server ${index + 1}**${server.Private ? '  🔒' : ''}\n\`${bar(server.Players || 0, max)}\` ${server.Players}/${max}\n-# ${sky(server.Hour)} ${clock(server.Hour)}  ·  ${WEATHER[server.Weather] || server.Weather || 'Unknown'}  ·  up ${duration(uptime)}`;
         }).join('\n').slice(0, 1024)
       });
     }
-    embed.setFooter({ text: 'Updates every minute' }).setTimestamp();
-    const components = info?.rootPlaceId
-      ? [new ActionRowBuilder().addComponents(new ButtonBuilder().setLabel('Play').setStyle(ButtonStyle.Link).setURL(`https://www.roblox.com/games/${info.rootPlaceId}`))]
-      : [];
-    return { embeds: [embed], components };
+    embed.addFields({ name: 'Last 24 hours', value: `\`${graph.line}\`\n-# Busiest hour: ${graph.peak} ${graph.peak === 1 ? 'player' : 'players'}` });
+    if (art.thumbnail) embed.setImage(art.thumbnail);
+    embed.setFooter({ text: `${CONFIG.brandName} · Refreshes every minute` });
+
+    const row = new ActionRowBuilder();
+    if (gameUrl) row.addComponents(new ButtonBuilder().setLabel('Play').setEmoji('🎮').setStyle(ButtonStyle.Link).setURL(gameUrl));
+    servers.filter((server) => !server.Private && (server.Players || 0) < (server.Max || Infinity)).slice(0, 4).forEach((server) => {
+      const index = servers.indexOf(server) + 1;
+      row.addComponents(new ButtonBuilder().setLabel(`Join server ${index}`).setStyle(ButtonStyle.Link)
+        .setURL(`https://www.roblox.com/games/start?placeId=${placeId}&gameInstanceId=${server.id}`));
+    });
+    return { embeds: [embed], components: row.components.length && placeId ? [row] : [] };
   }
 
   async function update() {

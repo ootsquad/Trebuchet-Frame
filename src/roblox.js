@@ -95,6 +95,20 @@ export class RobloxService {
     return entry?.state === 'Completed' ? entry.imageUrl : null;
   }
 
+  // The game's square icon and its first wide thumbnail, for the server status card.
+  async gameArt() {
+    const [icon, thumb] = await Promise.all([
+      fetch(`https://thumbnails.roblox.com/v1/games/icons?universeIds=${this.universeId}&size=150x150&format=Png&isCircular=false`).then(parseResponse).catch(() => null),
+      fetch(`https://thumbnails.roblox.com/v1/games/multiget/thumbnails?universeIds=${this.universeId}&countPerUniverse=1&size=768x432&format=Png`).then(parseResponse).catch(() => null)
+    ]);
+    const iconEntry = icon?.data?.[0];
+    const thumbEntry = thumb?.data?.[0]?.thumbnails?.[0];
+    return {
+      icon: iconEntry?.state === 'Completed' ? iconEntry.imageUrl : null,
+      thumbnail: thumbEntry?.state === 'Completed' ? thumbEntry.imageUrl : null
+    };
+  }
+
   async usernames(ids) {
     const names = new Map();
     for (let index = 0; index < ids.length; index += 100) {
@@ -316,7 +330,7 @@ export class RobloxService {
   async universeInfo() {
     const body = await parseResponse(await fetch(`https://games.roblox.com/v1/games?universeIds=${this.universeId}`));
     const game = body?.data?.[0];
-    return game ? { name: game.name, playing: game.playing, visits: game.visits, rootPlaceId: game.rootPlaceId, favorites: game.favoritedCount } : null;
+    return game ? { name: game.name, playing: game.playing, visits: game.visits, rootPlaceId: game.rootPlaceId, favorites: game.favoritedCount, maxPlayers: game.maxPlayers, updated: game.updated } : null;
   }
 
   async groupInfo(groupId) {
