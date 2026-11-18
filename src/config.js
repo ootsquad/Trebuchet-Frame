@@ -79,7 +79,7 @@ export const CONFIG = Object.freeze({
     project: env('GROUP_PROJECT_ID', '1039001311'),
     unsc: env('GROUP_UNSC_ID', '4615211'),
     marines: env('GROUP_MARINES_ID', '4615235'),
-    navy: env('GROUP_NAVY_ID'),
+    navy: env('GROUP_NAVY_ID', '4615237'),
     materials: env('GROUP_MATERIALS_ID', '911082331'),
     vehicles: env('GROUP_VEHICLES_ID', '287151398'),
     divisions: Object.freeze({
