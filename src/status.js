@@ -1,13 +1,10 @@
 // Server status: one card in the server status channel, updated every minute. Running game servers report
 // themselves through the data store TrebuchetStatus (the game's StatusService); the totals come from Roblox.
-// The bot also keeps a small history: hourly player peaks for the activity graph, today's peak, and when a
-// server was last running.
+// The bot also remembers today's peak and when a player was last online.
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
 import { CONFIG } from './config.js';
 
 const TAG = 'Server Status';
-const HISTORY_HOURS = 24;
-const BLOCKS = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 const WEATHER = {
   Clear: '☀️ Clear', Cloudy: '☁️ Cloudy', Overcast: '☁️ Overcast', Rain: '🌧️ Rain', HeavyRain: '🌧️ Heavy rain',
   FoggyRain: '🌫️ Foggy rain', Thunderstorm: '⛈️ Storm', Storm: '⛈️ Storm', Snow: '🌨️ Snow', Blizzard: '❄️ Blizzard',
@@ -29,33 +26,19 @@ const duration = (minutes) => (minutes >= 60 ? `${Math.floor(minutes / 60)}h ${m
 const compact = (value) => Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(Number(value) || 0);
 const dayKey = (date = new Date()) => date.toLocaleDateString('en-CA', { timeZone: CONFIG.timeZone });
 
-// A one-line graph of the last 24 hours, oldest on the left.
-export function sparkline(history, nowHour, hours = HISTORY_HOURS) {
-  const byHour = new Map(history.map((entry) => [entry.hour, entry.max]));
-  const values = Array.from({ length: hours }, (_, index) => byHour.get(nowHour - hours + 1 + index) || 0);
-  const peak = Math.max(...values);
-  const line = values.map((value) => (peak === 0 ? BLOCKS[0] : BLOCKS[Math.min(7, Math.round((value / peak) * 7))])).join('');
-  return { line, peak };
-}
-
 export function createStatus({ client, roblox, store }) {
   let message = null;
   let art = { icon: null, thumbnail: null, at: 0 };
-  store.data.status ??= { history: [], peak: { day: null, count: 0 }, lastOnline: null };
+  store.data.status ??= { peak: { day: null, count: 0 }, lastOnline: null };
   const memory = store.data.status;
 
   function remember(online, now) {
-    const hour = Math.floor(now / 3600_000);
-    const last = memory.history.at(-1);
-    if (last?.hour === hour) last.max = Math.max(last.max, online);
-    else memory.history.push({ hour, max: online });
-    memory.history = memory.history.filter((entry) => entry.hour > hour - HISTORY_HOURS);
+    delete memory.history;
     const today = dayKey(new Date(now));
     if (memory.peak.day !== today) memory.peak = { day: today, count: 0 };
     memory.peak.count = Math.max(memory.peak.count, online);
     if (online > 0) memory.lastOnline = now;
     store.save();
-    return hour;
   }
 
   async function card() {
@@ -73,8 +56,7 @@ export function createStatus({ client, roblox, store }) {
     const reported = servers.reduce((sum, server) => sum + (Number(server.Players) || 0), 0);
     const online = Math.max(info?.playing || 0, reported);
     const up = online > 0 || servers.length > 0;
-    const hour = remember(online, now);
-    const graph = sparkline(memory.history, hour);
+    remember(online, now);
     const placeId = info?.rootPlaceId;
     const gameUrl = placeId ? `https://www.roblox.com/games/${placeId}` : null;
 
@@ -107,7 +89,6 @@ export function createStatus({ client, roblox, store }) {
         }).join('\n').slice(0, 1024)
       });
     }
-    embed.addFields({ name: 'Last 24 hours', value: `\`${graph.line}\`\n-# Busiest hour: ${graph.peak} ${graph.peak === 1 ? 'player' : 'players'}` });
     if (art.thumbnail) embed.setImage(art.thumbnail);
     embed.setFooter({ text: `${CONFIG.brandName} · Refreshes every minute` });
 

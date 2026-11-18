@@ -26,9 +26,3 @@ test('weeks start on Monday UTC like the game', () => {
   assert.equal(formatPlaytime(3 * 3600 + 5 * 60), '3h 5m');
 });
 
-test('status graph scales to the busiest hour', async () => {
-  const { sparkline } = await import('../src/status.js');
-  const { line, peak } = sparkline([{ hour: 98, max: 2 }, { hour: 100, max: 8 }], 100, 4);
-  assert.equal(peak, 8);
-  assert.equal(line, '▁▃▁█');
-});
