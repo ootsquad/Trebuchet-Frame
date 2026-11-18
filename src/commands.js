@@ -1,5 +1,11 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, PermissionFlagsBits, SlashCommandBuilder } from 'discord.js';
 import { checkPhrase, makePhrase } from './verify.js';
+import { COLORS, buttons, note, profileUrl, verifyCard } from './ui.js';
+
+const linkButtons = (account) => buttons([
+  { label: 'Open my profile', url: profileUrl(account.id) },
+  { id: 'link:verify', label: 'Check my profile', style: ButtonStyle.Success }
+]);
 
 // Self-linking waits for the phrase check: Discord user id -> { account, phrase, expires }.
 const pendingLinks = new Map();
@@ -95,22 +101,21 @@ export async function handleLinkButton(interaction, { store }) {
   const pending = pendingLinks.get(interaction.user.id);
   if (!pending || pending.expires < Date.now()) {
     pendingLinks.delete(interaction.user.id);
-    await interaction.update({ content: 'This check ran out. Run /link again.', components: [] });
+    await interaction.update({ embeds: [note('This check ran out. Run /link again.', COLORS.warn)], components: [] });
     return true;
   }
-  await interaction.update({ content: `Checking ${pending.account.name}'s profile...`, components: [] });
+  const first = verifyCard(pending.account, pending.phrase, { section: 'Account Link' });
+  await interaction.update({ embeds: [first, note(`Checking **${pending.account.name}**'s profile...`)], components: [] });
   if (!(await checkPhrase(pending.account.id, pending.phrase))) {
     await interaction.editReply({
-      content: `I could not find \`${pending.phrase}\` on ${pending.account.name}'s profile. Save it in About exactly as written, then press Verify again.`,
-      components: [new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('link:verify').setLabel('Verify').setStyle(ButtonStyle.Success)
-      )]
+      embeds: [first, note('I could not find the phrase on your profile yet. Check it is saved in **About** exactly as written, wait a few seconds, and try again.', COLORS.warn)],
+      components: [linkButtons(pending.account)]
     });
     return true;
   }
   pendingLinks.delete(interaction.user.id);
   store.link(interaction.user.id, pending.account);
-  await interaction.editReply({ content: `Verified and linked to ${pending.account.name}. You can remove the phrase from your profile now.`, components: [] });
+  await interaction.editReply({ embeds: [note(`✅ Linked to **${pending.account.name}**. You can delete the phrase from your profile now.`, COLORS.good)], components: [] });
   return true;
 }
 
@@ -157,15 +162,8 @@ export async function handleCommand(interaction, { applications, suggestions, an
     const phrase = makePhrase();
     pendingLinks.set(interaction.user.id, { account, phrase, expires: Date.now() + 30 * 60_000 });
     await interaction.editReply({
-      content: [
-        `To prove **${account.name}** is yours, put this phrase in your Roblox profile's About section:`,
-        `\`${phrase}\``,
-        `Edit it here: https://www.roblox.com/users/${account.id}/profile`,
-        'Then press Verify within 30 minutes. You can remove the phrase afterwards.'
-      ].join('\n'),
-      components: [new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('link:verify').setLabel('Verify').setStyle(ButtonStyle.Success)
-      )]
+      embeds: [verifyCard(account, phrase, { section: 'Account Link' }).setFooter({ text: 'This check runs out in 30 minutes. You can delete the phrase once you are linked.' })],
+      components: [linkButtons(account)]
     });
     return true;
   }

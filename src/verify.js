@@ -35,7 +35,7 @@ export async function readDescription(robloxUserId) {
 }
 
 // Checks the profile, a few times in case Roblox has not shown the new About text yet.
-export async function checkPhrase(robloxUserId, phrase, { attempts = 3, waitMs = 4000 } = {}) {
+export async function checkPhrase(robloxUserId, phrase, { attempts = 4, waitMs = 5000 } = {}) {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     if (profileHasPhrase(await readDescription(robloxUserId), phrase)) return true;
     if (attempt < attempts - 1) await new Promise((resolve) => setTimeout(resolve, waitMs));

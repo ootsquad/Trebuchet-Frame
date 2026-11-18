@@ -7,6 +7,11 @@ import {
 } from 'discord.js';
 import { CONFIG } from './config.js';
 import { checkPhrase, makePhrase } from './verify.js';
+import { COLORS, buttons, card, note, profileUrl, verifyCard } from './ui.js';
+
+const SECTION = 'Wave Application';
+const TOTAL_STEPS = 17;
+const step = (n) => `Step ${n} of ${TOTAL_STEPS}`;
 
 async function getTextChannel(client, channelId) {
   const channel = await client.channels.fetch(channelId);
@@ -40,25 +45,22 @@ function trim(value, max = 350) {
   return text.length > max ? `${text.slice(0, max - 3)}...` : text;
 }
 
-function normalizeAgreement(value) {
-  const cleaned = String(value).trim().toLowerCase();
-  return ['yes', 'y', 'i agree', 'agree', 'agreed', 'accepted', 'accept'].includes(cleaned);
-}
-
+// Sends a question card and waits for a typed answer. "cancel" stops the application.
 async function ask(dm, userId, prompt, { minWords = 1, validate = null, timeout = 15 * 60_000 } = {}) {
+  const payload = typeof prompt === 'string' ? { embeds: [card({ section: SECTION, description: prompt })] } : prompt;
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    await dm.send(prompt);
+    await dm.send(payload);
     const collected = await dm.awaitMessages({
       filter: (message) => message.author.id === userId,
       max: 1,
       time: timeout,
       errors: ['time']
-    });
+    }).catch(() => { throw new Error('No answer in time. Start again with /wave-apply when you are ready.'); });
     const answer = collected.first()?.content?.trim() || '';
     if (answer.toLowerCase() === 'cancel') throw new Error('Application cancelled by user.');
 
     if (answer.split(/\s+/).filter(Boolean).length < minWords) {
-      await dm.send(`Please give a fuller answer. This question requires at least ${minWords} words.`);
+      await dm.send({ embeds: [note(`Please give a fuller answer, at least **${minWords} words**.`, COLORS.warn)] });
       continue;
     }
 
@@ -67,7 +69,7 @@ async function ask(dm, userId, prompt, { minWords = 1, validate = null, timeout 
         const result = await validate(answer);
         return { answer, result };
       } catch (error) {
-        await dm.send(`I could not accept that answer: ${trim(error.message, 700)}`);
+        await dm.send({ embeds: [note(trim(error.message, 700), COLORS.warn)] });
         continue;
       }
     }
@@ -75,6 +77,22 @@ async function ask(dm, userId, prompt, { minWords = 1, validate = null, timeout 
     return { answer, result: null };
   }
   throw new Error('Too many invalid answers. Start the application again when ready.');
+}
+
+// Sends a card with buttons and waits for a press. The pressed button is greyed out with the rest.
+async function choose(dm, userId, payload, options, { timeout = 15 * 60_000 } = {}) {
+  const row = buttons([...options, { id: 'wavedm:cancel', label: 'Cancel application', style: ButtonStyle.Danger }]);
+  const message = await dm.send({ ...payload, components: [row] });
+  const pressed = await message.awaitMessageComponent({ filter: (i) => i.user.id === userId, time: timeout })
+    .catch(() => { throw new Error('No answer in time. Start again with /wave-apply when you are ready.'); });
+  const done = buttons([...options, { id: 'wavedm:cancel', label: 'Cancel application', style: ButtonStyle.Danger }].map((option) => ({
+    ...option,
+    style: option.id === pressed.customId ? (option.style === ButtonStyle.Danger ? ButtonStyle.Danger : ButtonStyle.Primary) : ButtonStyle.Secondary,
+    disabled: !option.url
+  })));
+  await pressed.update({ components: [done] }).catch(() => {});
+  if (pressed.customId === 'wavedm:cancel') throw new Error('Application cancelled by user.');
+  return pressed.customId;
 }
 
 function buildDecisionRow(discordUserId, robloxUserId, disabled = false) {
@@ -181,16 +199,23 @@ export function createApplicationService({ client, roblox, store }) {
       }
 
       const dm = await member.createDM();
-      await dm.send([
-        `Welcome to ${CONFIG.brandName}. I am starting your wave application because of: ${source}.`,
-        'Reply to each question in this DM. Type `cancel` at any time to stop.',
-        'Knowledge answers require at least one short sentence.',
-        'Discord Terms: https://discord.com/terms',
-        'Discord Privacy: https://discord.com/privacy',
-        'Roblox Terms of Use: https://en.help.roblox.com/hc/en-us/articles/115004647846-Roblox-Terms-of-Use'
-      ].join('\n'));
+      await dm.send({ embeds: [card({
+        section: SECTION,
+        title: `Welcome to ${CONFIG.brandName}`,
+        description: `Your wave application has started (${source}). Answer each question in this DM. It takes about 10 minutes.`,
+        fields: [
+          { name: 'What you will do', value: '**1.** Link and verify your Roblox account\n**2.** Tell us your age\n**3.** Answer 10 short knowledge questions\n**4.** Accept 4 agreements' },
+          { name: 'Good to know', value: '• You have 15 minutes per question.\n• Knowledge answers need a short sentence.\n• Type `cancel` at any time to stop.' }
+        ],
+        footer: 'A Wave Moderator reviews every application.'
+      })] });
 
-      const robloxAnswer = await ask(dm, member.id, 'User Information 1/2: What is your Roblox username or Roblox UserID?', {
+      const robloxAnswer = await ask(dm, member.id, { embeds: [card({
+        section: SECTION,
+        title: `${step(1)}  Roblox account`,
+        description: 'What is your **Roblox username** or **user ID**?',
+        footer: 'Use your username, not your display name.'
+      })] }, {
         validate: (answer) => roblox.resolveUser(answer)
       });
       const robloxUser = robloxAnswer.result;
@@ -201,25 +226,25 @@ export function createApplicationService({ client, roblox, store }) {
         throw new Error(`The Roblox account ${robloxUser.name} is already linked to another Discord account. Contact a Wave Moderator.`);
       }
       const phrase = makePhrase();
-      await dm.send([
-        `To prove **${robloxUser.name}** is your account, put this phrase in your Roblox profile's About section:`,
-        `\`${phrase}\``,
-        `Edit it here: https://www.roblox.com/users/${robloxUser.id}/profile`,
-        'Then reply `done`. You can remove it once you are verified.'
-      ].join('\n'));
       let verified = false;
-      for (let tries = 1; tries <= 3 && !verified; tries += 1) {
-        await ask(dm, member.id, tries === 1 ? 'Reply `done` when the phrase is saved on your profile.' : 'Reply `done` to check again.', { timeout: 30 * 60_000 });
-        await dm.send('Checking your profile...');
+      for (let tries = 1; tries <= 5 && !verified; tries += 1) {
+        await choose(dm, member.id, { embeds: [tries === 1
+          ? verifyCard(robloxUser, phrase, { section: SECTION, step: step(2) })
+          : note(`I could not find the phrase on **${robloxUser.name}**'s profile yet. Check it is saved in **About** exactly as written, wait a few seconds, and try again. (${tries - 1} of 4 tries used)`, COLORS.warn)] }, [
+          { label: 'Open my profile', url: profileUrl(robloxUser.id) },
+          { id: 'wavedm:check', label: 'Check my profile', style: ButtonStyle.Success }
+        ], { timeout: 30 * 60_000 });
         verified = await checkPhrase(robloxUser.id, phrase);
-        if (!verified && tries < 3) {
-          await dm.send(`I could not find \`${phrase}\` on ${robloxUser.name}'s profile. Make sure it is saved in About exactly as written, with nothing hidden by Roblox's filter.`);
-        }
       }
       if (!verified) throw new Error(`The phrase never showed up on ${robloxUser.name}'s profile, so the account could not be verified.`);
-      await dm.send(`Verified: ${robloxUser.name} is yours. You can remove the phrase from your profile now.`);
+      await dm.send({ embeds: [note(`✅ **${robloxUser.name}** is verified. You can delete the phrase from your profile now.`, COLORS.good)] });
 
-      const ageAnswer = await ask(dm, member.id, 'User Information 2/2: What is your age?', {
+      const ageAnswer = await ask(dm, member.id, { embeds: [card({
+        section: SECTION,
+        title: `${step(3)}  Age`,
+        description: 'How old are you?',
+        footer: 'Reply with a number.'
+      })] }, {
         validate: async (answer) => {
           const age = Number(answer);
           if (!Number.isInteger(age) || age < CONFIG.waves.minimumAge || age > 99) throw new Error(`Enter a whole-number age from ${CONFIG.waves.minimumAge} to 99.`);
@@ -230,23 +255,35 @@ export function createApplicationService({ client, roblox, store }) {
       const knowledge = {};
       for (let index = 0; index < knowledgeQuestions.length; index += 1) {
         const [key, question] = knowledgeQuestions[index];
-        const response = await ask(dm, member.id, `Knowledge ${index + 1}/${knowledgeQuestions.length}: ${question}`, {
-          minWords: index < 8 ? 5 : 2
-        });
+        const minWords = index < 8 ? 5 : 2;
+        const response = await ask(dm, member.id, { embeds: [card({
+          section: SECTION,
+          title: `${step(4 + index)}  Knowledge ${index + 1} of ${knowledgeQuestions.length}`,
+          description: question,
+          footer: `At least ${minWords} words.`
+        })] }, { minWords });
         knowledge[key] = response.answer;
       }
 
-      const terms = await ask(dm, member.id, 'Agreement 1/4: Do you agree to the Discord Terms of Service at https://discord.com/terms ? Reply yes or no.');
-      const privacy = await ask(dm, member.id, 'Agreement 2/4: Do you agree to the Discord Privacy Policy at https://discord.com/privacy ? Reply yes or no.');
-      const robloxTerms = await ask(dm, member.id, 'Agreement 3/4: Do you agree to the Roblox Terms of Use at https://en.help.roblox.com/hc/en-us/articles/115004647846-Roblox-Terms-of-Use ? Reply yes or no.');
-      const rules = await ask(dm, member.id, `Agreement 4/4: Do you agree to follow the ${CONFIG.brandName} community rules posted in the Discord server? Reply yes or no.`);
-
-      const agreements = {
-        discordTerms: normalizeAgreement(terms.answer),
-        discordPrivacy: normalizeAgreement(privacy.answer),
-        robloxTerms: normalizeAgreement(robloxTerms.answer),
-        communityRules: normalizeAgreement(rules.answer)
-      };
+      const agreementList = [
+        ['discordTerms', 'Discord Terms of Service', '[Read them here](https://discord.com/terms)'],
+        ['discordPrivacy', 'Discord Privacy Policy', '[Read it here](https://discord.com/privacy)'],
+        ['robloxTerms', 'Roblox Terms of Use', '[Read them here](https://en.help.roblox.com/hc/en-us/articles/115004647846-Roblox-Terms-of-Use)'],
+        ['communityRules', `${CONFIG.brandName} community rules`, 'Posted in the Discord server.']
+      ];
+      const agreements = {};
+      for (let index = 0; index < agreementList.length; index += 1) {
+        const [key, name, where] = agreementList[index];
+        const pressed = await choose(dm, member.id, { embeds: [card({
+          section: SECTION,
+          title: `${step(14 + index)}  Agreement ${index + 1} of 4`,
+          description: `Do you agree to the **${name}**?\n${where}`
+        })] }, [
+          { id: 'wavedm:yes', label: 'I agree', style: ButtonStyle.Success },
+          { id: 'wavedm:no', label: 'I do not agree', style: ButtonStyle.Secondary }
+        ]);
+        agreements[key] = pressed === 'wavedm:yes';
+      }
 
       let robloxRoles = [];
       try { const unscRank = await roblox.getRank(CONFIG.groups.unsc, robloxUser.id); robloxRoles = unscRank ? [`UNSC: ${unscRank}`] : []; } catch (error) { await reportError(client, 'Checking applicant Roblox membership', error); }
@@ -269,15 +306,22 @@ export function createApplicationService({ client, roblox, store }) {
       });
 
 
-      if (!agreements.discordTerms || !agreements.discordPrivacy || !agreements.robloxTerms || !agreements.communityRules) {
-        await dm.send('Your application was submitted, but one or more required agreements were not accepted. A moderator will review it.');
-      } else {
-        await dm.send('Your wave application was submitted. A Wave Moderator will review it.');
-      }
+      const allAgreed = Object.values(agreements).every(Boolean);
+      await dm.send({ embeds: [card({
+        section: SECTION,
+        title: 'Application submitted',
+        color: allAgreed ? COLORS.good : COLORS.warn,
+        description: allAgreed
+          ? 'Thank you. A Wave Moderator will review your application. I will message you here with the result.'
+          : 'Your application was sent, but you did not accept every agreement. A Wave Moderator will review it, and it cannot be approved without them.',
+        fields: [{ name: 'Roblox account', value: `${robloxUser.name} (verified)`, inline: true }]
+      })] });
     } catch (error) {
-      if (!String(error.message).includes('Application cancelled by user')) {
+      if (String(error.message).includes('Application cancelled by user')) {
+        try { await member.send({ embeds: [note('Application cancelled. Use /wave-apply in the server whenever you want to start again.')] }); } catch {}
+      } else {
         await reportError(client, `Wave application for Discord user ${member.id}`, error);
-        try { await member.send(`Your wave application stopped: ${trim(error.message, 700)}\nUse /wave-apply in the server to start again.`); } catch {}
+        try { await member.send({ embeds: [card({ section: SECTION, title: 'Application stopped', color: COLORS.bad, description: trim(error.message, 700), footer: 'Use /wave-apply in the server to start again.' })] }); } catch {}
       }
     } finally {
       activeApplicants.delete(member.id);
@@ -326,14 +370,14 @@ export function createApplicationService({ client, roblox, store }) {
           note: `UNSC rank: ${robloxResult.rank}${robloxResult.alreadyWaved ? ' (already had it)' : ''}. Discord member role given. Discord and Roblox accounts linked.`
         });
 
-        try { await guildMember.send(`Your ${CONFIG.brandName} wave application was approved. Welcome aboard.`); } catch {}
+        try { await guildMember.send({ embeds: [card({ section: SECTION, title: 'Application approved', color: COLORS.good, description: `Welcome to ${CONFIG.brandName}. You now have access to the rest of the server.` })] }); } catch {}
         if (interaction) await interaction.editReply('Approved. Roblox and Discord roles were updated.');
       } else {
         if (interaction) await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const guildMember = await message.guild.members.fetch(parsed.discordUserId).catch(() => null);
         await updateApplicationStatus(message, { status: 'DENIED', moderator, note: 'No rank changes were made.' });
         if (guildMember) {
-          try { await guildMember.send(`Your ${CONFIG.brandName} wave application was denied. Contact a Wave Moderator if you need clarification.`); } catch {}
+          try { await guildMember.send({ embeds: [card({ section: SECTION, title: 'Application denied', color: COLORS.bad, description: 'Your application was not approved this time. Contact a Wave Moderator if you have questions.' })] }); } catch {}
         }
         if (interaction) await interaction.editReply('Denied. No Roblox or Discord rank changes were made.');
       }
