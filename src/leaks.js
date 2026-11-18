@@ -5,7 +5,7 @@
 //   [ganymede]                  optional first line: which facility it comes from (default LEAKS_FACILITY)
 //   Headline                    the bold title
 //   Body text...                any further lines, shown as a quote
-// Attach 1 to 4 pictures.
+// Attach up to 4 pictures and up to 4 videos. Videos play under the card.
 import { AttachmentBuilder, EmbedBuilder } from 'discord.js';
 import { CONFIG } from './config.js';
 
@@ -17,6 +17,11 @@ export const FACILITIES = Object.freeze({
 });
 
 const isImage = (file) => file.contentType?.startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(file.name || '');
+const isVideo = (file) => file.contentType?.startsWith('video/') || /\.(mp4|mov|webm|m4v)$/i.test(file.name || '');
+const extension = (file, fallback) => (file.name || '').match(/\.\w+$/)?.[0] || fallback;
+
+// What a bot may upload to a server, by its boost level (25, 50 or 100 MB).
+const uploadLimit = (guild) => ({ 2: 50, 3: 100 }[guild?.premiumTier] || 25) * 1024 * 1024;
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
 // Today's real day and month, in the setting's year: 17 NOV 2524.
@@ -67,19 +72,33 @@ export function createLeaks({ client, store }) {
 
   async function onMessage(message) {
     if (!enabled() || message.author.bot || message.channelId !== CONFIG.channels.leaksSource) return false;
-    const images = [...message.attachments.values()].filter(isImage);
-    if (!images.length || !allowed(message.member) || store.leakPosted(message.id)) return true;
+    const images = [...message.attachments.values()].filter(isImage).slice(0, 4);
+    const videos = [...message.attachments.values()].filter(isVideo).slice(0, 4);
+    if ((!images.length && !videos.length) || !allowed(message.member) || store.leakPosted(message.id)) return true;
+    const channel = await client.channels.fetch(CONFIG.channels.leaks);
+    const limit = uploadLimit(channel.guild);
+    const tooBig = videos.filter((file) => file.size > limit);
+    if (tooBig.length) {
+      await message.reply({
+        content: `Not posted: ${tooBig.map((file) => file.name).join(', ')} ${tooBig.length > 1 ? 'are' : 'is'} over the ${Math.round(limit / 1048576)} MB upload limit of the leaks server. Compress the video and post again.`,
+        allowedMentions: { repliedUser: false }
+      }).catch(() => {});
+      return true;
+    }
 
     const { facility, title, description } = formatLeak(message.content, CONFIG.leaks.facility);
     const site = FACILITIES[facility];
     const report = nextReport(facility);
 
     // The images are uploaded again, so the card keeps working if the source post is deleted.
-    const files = images.slice(0, 4).map((file, index) => new AttachmentBuilder(file.url, { name: `report-${index + 1}${(file.name || '.png').match(/\.\w+$/)?.[0] || '.png'}` }));
+    const files = images.map((file, index) => new AttachmentBuilder(file.url, { name: `report-${index + 1}${extension(file, '.png')}` }));
+    const clips = videos.map((file, index) => new AttachmentBuilder(file.url, { name: `footage-${index + 1}${extension(file, '.mp4')}` }));
     // Cards that share a link show their pictures together as one gallery.
     const shared = `https://discord.com/channels/${CONFIG.guildId}/${CONFIG.channels.leaks}`;
-    const embeds = files.map((file, index) => {
-      const embed = new EmbedBuilder().setImage(`attachment://${file.name}`);
+    const slots = files.length ? files : [null];
+    const embeds = slots.map((file, index) => {
+      const embed = new EmbedBuilder();
+      if (file) embed.setImage(`attachment://${file.name}`);
       if (files.length > 1) embed.setURL(shared);
       if (index === 0) {
         embed
@@ -93,7 +112,7 @@ export function createLeaks({ client, store }) {
           .addFields(
             { name: 'Report', value: `\`${report}\``, inline: true },
             { name: 'Logged', value: `\`${settingDate()}\``, inline: true },
-            { name: 'Exhibits', value: `\`${files.length}\``, inline: true }
+            { name: 'Exhibits', value: `\`${[files.length && `${files.length} image${files.length > 1 ? 's' : ''}`, clips.length && `${clips.length} video${clips.length > 1 ? 's' : ''}`].filter(Boolean).join(', ')}\``, inline: true }
           )
           .setFooter({ text: 'Materials Group  ·  A government-contracted technology firm', iconURL: CONFIG.leaks.iconUrl || undefined })
           .setTimestamp(message.createdAt);
@@ -102,8 +121,8 @@ export function createLeaks({ client, store }) {
       return embed;
     });
 
-    const channel = await client.channels.fetch(CONFIG.channels.leaks);
-    const posted = await channel.send({ embeds, files, allowedMentions: { parse: [] } });
+    // Videos cannot play inside a card, so they go along as files and play under it.
+    const posted = await channel.send({ embeds, files: [...files, ...clips], allowedMentions: { parse: [] } });
     store.markLeak(message.id, posted.id);
     if (CONFIG.leaks.reactWhenPosted) await message.react(CONFIG.leaks.reactWhenPosted).catch(() => {});
     return true;
