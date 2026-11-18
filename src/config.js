@@ -60,6 +60,8 @@ export const CONFIG = Object.freeze({
 
   roblox: Object.freeze({
     apiKey: env('ROBLOX_API_KEY') || env('ROBLOX_OPEN_CLOUD_API_KEY'),
+    // Optional second key for the game's data store (for example a key made by the group that owns the game).
+    dataStoreKey: env('ROBLOX_DATASTORE_API_KEY'),
     universeId: env('ROBLOX_UNIVERSE_ID'),
     economyStore: env('ROBLOX_ECONOMY_STORE', 'TrebuchetEconomyV1')
   }),

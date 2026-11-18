@@ -21,8 +21,9 @@ const roleName = (role) => String(role?.displayName || role?.name || '').trim();
 const roleId = (role) => String(role?.id || String(role?.path || '').split('/').pop());
 
 export class RobloxService {
-  constructor({ apiKey = CONFIG.roblox.apiKey, universeId = CONFIG.roblox.universeId } = {}) {
+  constructor({ apiKey = CONFIG.roblox.apiKey, universeId = CONFIG.roblox.universeId, dataStoreKey = CONFIG.roblox.dataStoreKey } = {}) {
     this.apiKey = apiKey;
+    this.dataStoreKey = dataStoreKey || apiKey;
     this.universeId = String(universeId);
     this.roleCache = new Map();
   }
@@ -189,7 +190,7 @@ export class RobloxService {
   }
 
   async getEntry(key) {
-    const response = await fetch(this.#entryUrl(key), { headers: { 'x-api-key': this.apiKey } });
+    const response = await fetch(this.#entryUrl(key), { headers: { 'x-api-key': this.dataStoreKey } });
     if (response.status === 404) return { value: null, version: null };
     const value = await parseResponse(response);
     return { value, version: response.headers.get('roblox-entry-version') };
@@ -201,7 +202,7 @@ export class RobloxService {
     const extra = version ? { matchVersion: version } : { exclusiveCreate: 'true' };
     const response = await fetch(this.#entryUrl(key, extra), {
       method: 'POST',
-      headers: { 'x-api-key': this.apiKey, 'content-type': 'application/json', 'content-md5': md5 },
+      headers: { 'x-api-key': this.dataStoreKey, 'content-type': 'application/json', 'content-md5': md5 },
       body
     });
     return parseResponse(response);
